@@ -10,6 +10,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.UUID;
 
 public interface PostRepository extends JpaRepository<Post, Long> {
 
@@ -24,6 +25,18 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     Page<Post> searchByCategory(@Param("category") Category category, @Param("q") String q, Pageable pageable);
 
     List<Post> findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(Category category);
+
+    Page<Post> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+
+    @Query("""
+            SELECT p FROM Post p
+            WHERE p.postId IN (
+                SELECT r.postId FROM Reaction r
+                WHERE r.userId = :userId AND r.type = com.planmate.community.domain.reaction.enums.ReactionType.LIKE
+            )
+            ORDER BY p.createdAt DESC
+            """)
+    Page<Post> findLikedByUserId(@Param("userId") UUID userId, Pageable pageable);
 
     // 카운터는 동시성 안전하게 원자적 UPDATE로 증감한다
     @Modifying(clearAutomatically = true, flushAutomatically = true)

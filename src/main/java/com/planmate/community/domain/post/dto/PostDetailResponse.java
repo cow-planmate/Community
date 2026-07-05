@@ -42,7 +42,7 @@ public record PostDetailResponse(
         String myReaction
 ) {
 
-    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction) {
+    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction, Integer participants) {
         return new PostDetailResponse(
                 post.getPostId(),
                 post.getUserId(),
@@ -60,8 +60,7 @@ public record PostDetailResponse(
                 content,
                 post.getContentText(),
                 post.getIsAnswered(),
-                // participants는 메이트 참여 마일스톤에서 실카운트로 대체
-                post.getStatus() != null ? 0 : null,
+                participants,
                 post.getMaxParticipants(),
                 post.getStatus() != null ? post.getStatus().toLowerValue() : null,
                 post.getLocation(),

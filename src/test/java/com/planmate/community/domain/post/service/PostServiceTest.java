@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
 import com.planmate.community.domain.post.entity.Post;
@@ -13,6 +14,7 @@ import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.validator.PostAccessValidator;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
+import com.planmate.community.domain.stats.service.UserStatsService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +38,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -51,6 +52,9 @@ class PostServiceTest {
     private UserStatsRepository userStatsRepository;
 
     @Mock
+    private MateParticipantRepository mateParticipantRepository;
+
+    @Mock
     private UserClient userClient;
 
     @Mock
@@ -59,6 +63,9 @@ class PostServiceTest {
     @Mock
     private ReactionRepository reactionRepository;
 
+    @Mock
+    private UserStatsService userStatsService;
+
     private PostService postService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -66,9 +73,11 @@ class PostServiceTest {
 
     @BeforeEach
     void setUp() {
+        PostAssembler postAssembler = new PostAssembler(
+                userClient, userStatsRepository, mateParticipantRepository, objectMapper);
         postService = new PostService(
-                postRepository, userStatsRepository, userClient, new PostAccessValidator(), objectMapper,
-                viewCountService, reactionRepository);
+                postRepository, userClient, new PostAccessValidator(), objectMapper,
+                viewCountService, reactionRepository, postAssembler, userStatsService);
     }
 
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
@@ -88,10 +97,11 @@ class PostServiceTest {
     }
 
     @Test
-    @DisplayName("메이트 게시글 생성 시 모집중 상태와 닉네임 스냅샷이 저장된다")
+    @DisplayName("메이트 게시글 생성 시 모집중 상태·닉네임 스냅샷·활동 통계 기록이 수행된다")
     void createMatePostDefaults() {
         when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
+        when(mateParticipantRepository.countByPostId(1L)).thenReturn(0L);
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
             Post post = invocation.getArgument(0);
             ReflectionTestUtils.setField(post, "postId", 1L);
@@ -107,8 +117,10 @@ class PostServiceTest {
         assertThat(saved.getAuthorNickname()).isEqualTo("여행자");
         assertThat(saved.getRegion()).isEqualTo("제주");
         assertThat(saved.getIsAnswered()).isNull();
+        verify(userStatsService).recordPostCreated(userId);
         assertThat(response.level()).isEqualTo(1);
         assertThat(response.status()).isEqualTo("recruiting");
+        assertThat(response.participants()).isZero();
     }
 
     @Test
@@ -137,7 +149,7 @@ class PostServiceTest {
     }
 
     @Test
-    @DisplayName("관리자는 작성자가 아니어도 게시글을 삭제(soft delete)할 수 있다")
+    @DisplayName("관리자는 작성자가 아니어도 게시글을 삭제할 수 있고 작성자 통계가 감소한다")
     void deletePostByAdmin() {
         Post post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
@@ -145,6 +157,18 @@ class PostServiceTest {
         postService.deletePost(UUID.randomUUID(), true, 1L);
 
         assertThat(post.isDeleted()).isTrue();
+        verify(userStatsService).recordPostDeleted(userId);
+    }
+
+    @Test
+    @DisplayName("QnA가 아닌 게시글에 답변 완료 표시를 하면 INVALID_INPUT 예외가 발생한다")
+    void updateAnsweredOnNonQnaPost() {
+        Post post = freePost(userId);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+
+        assertThatThrownBy(() -> postService.updateAnswered(userId, 1L, true))
+                .isInstanceOf(CommunityException.class)
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT));
     }
 
     @Test

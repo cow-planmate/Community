@@ -106,6 +106,14 @@ public class Post extends BaseSoftDeleteEntity {
         return this.userId.equals(userId);
     }
 
+    public void changeStatus(MateStatus status) {
+        this.status = status;
+    }
+
+    public void markAnswered(boolean answered) {
+        this.isAnswered = answered;
+    }
+
     public void update(String title, String content, String contentText, String thumbnailUrl) {
         if (title != null && !title.isBlank()) {
             this.title = title;

@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.controller;
 
 import com.planmate.community.common.dto.PageResponse;
+import com.planmate.community.domain.post.dto.AnsweredRequest;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
@@ -85,6 +86,17 @@ public class PostController {
     ) {
         UUID userId = UUID.fromString(authentication.getName());
         return ResponseEntity.ok(postService.updatePost(userId, postId, request));
+    }
+
+    @Operation(summary = "QnA 답변 완료 표시", description = "작성자가 QnA 게시글의 답변 완료 여부를 변경합니다.")
+    @PatchMapping("/{postId}/answered")
+    public ResponseEntity<PostDetailResponse> updateAnswered(
+            Authentication authentication,
+            @PathVariable("postId") Long postId,
+            @Valid @RequestBody AnsweredRequest request
+    ) {
+        UUID userId = UUID.fromString(authentication.getName());
+        return ResponseEntity.ok(postService.updateAnswered(userId, postId, request.isAnswered()));
     }
 
     @Operation(summary = "게시글 삭제", description = "작성자 또는 관리자가 게시글을 삭제합니다 (soft delete).")

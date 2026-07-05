@@ -12,6 +12,7 @@ import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
+import com.planmate.community.domain.stats.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -34,6 +35,7 @@ public class CommentService {
     private final PostRepository postRepository;
     private final UserStatsRepository userStatsRepository;
     private final UserClient userClient;
+    private final UserStatsService userStatsService;
 
     @Transactional
     public CommentResponse createComment(UUID userId, Long postId, CommentCreateRequest request) {
@@ -51,6 +53,7 @@ public class CommentService {
 
         Comment saved = commentRepository.save(comment);
         postRepository.addCommentCount(postId, 1);
+        userStatsService.recordCommentCreated(userId);
         return CommentResponse.of(saved, nickname, findLevel(userId));
     }
 
@@ -95,6 +98,7 @@ public class CommentService {
         }
         comment.softDelete();
         postRepository.addCommentCount(comment.getPostId(), -1);
+        userStatsService.recordCommentDeleted(comment.getUserId());
     }
 
     private Comment findComment(Long commentId) {

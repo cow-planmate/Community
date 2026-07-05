@@ -38,7 +38,7 @@ public record PostSummaryResponse(
     public record Coords(double lat, double lng) {
     }
 
-    public static PostSummaryResponse of(Post post, String freshNickname, int level) {
+    public static PostSummaryResponse of(Post post, String freshNickname, int level, Integer participants) {
         return new PostSummaryResponse(
                 post.getPostId(),
                 post.getUserId(),
@@ -53,8 +53,7 @@ public record PostSummaryResponse(
                 post.getCreatedAt(),
                 post.getThumbnailUrl(),
                 post.getIsAnswered(),
-                // participants는 메이트 참여 마일스톤에서 실카운트로 대체
-                post.getStatus() != null ? 0 : null,
+                participants,
                 post.getMaxParticipants(),
                 post.getStatus() != null ? post.getStatus().toLowerValue() : null,
                 post.getLocation(),

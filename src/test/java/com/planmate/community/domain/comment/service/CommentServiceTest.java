@@ -9,6 +9,7 @@ import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
+import com.planmate.community.domain.stats.service.UserStatsService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -42,6 +43,9 @@ class CommentServiceTest {
     @Mock
     private UserClient userClient;
 
+    @Mock
+    private UserStatsService userStatsService;
+
     @InjectMocks
     private CommentService commentService;
 
@@ -73,6 +77,7 @@ class CommentServiceTest {
         var response = commentService.createComment(userId, 1L, new CommentCreateRequest("첫 댓글"));
 
         verify(postRepository).addCommentCount(1L, 1);
+        verify(userStatsService).recordCommentCreated(userId);
         assertThat(response.author()).isEqualTo("댓글러");
         assertThat(response.content()).isEqualTo("첫 댓글");
         assertThat(response.level()).isEqualTo(1);
@@ -109,5 +114,6 @@ class CommentServiceTest {
 
         assertThat(target.isDeleted()).isTrue();
         verify(postRepository).addCommentCount(1L, -1);
+        verify(userStatsService).recordCommentDeleted(userId);
     }
 }

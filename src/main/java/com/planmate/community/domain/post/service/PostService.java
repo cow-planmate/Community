@@ -18,8 +18,7 @@ import com.planmate.community.domain.post.enums.SortType;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.validator.PostAccessValidator;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
-import com.planmate.community.domain.stats.entity.UserStats;
-import com.planmate.community.domain.stats.repository.UserStatsRepository;
+import com.planmate.community.domain.stats.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -29,10 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -42,12 +38,13 @@ public class PostService {
     private static final int MAX_PAGE_SIZE = 50;
 
     private final PostRepository postRepository;
-    private final UserStatsRepository userStatsRepository;
     private final UserClient userClient;
     private final PostAccessValidator postAccessValidator;
     private final ObjectMapper objectMapper;
     private final ViewCountService viewCountService;
     private final ReactionRepository reactionRepository;
+    private final PostAssembler postAssembler;
+    private final UserStatsService userStatsService;
 
     @Transactional
     public PostDetailResponse createPost(UUID userId, PostCreateRequest request) {
@@ -76,7 +73,8 @@ public class PostService {
                 .build();
 
         Post saved = postRepository.save(post);
-        return PostDetailResponse.of(saved, nickname, findLevel(userId), request.content(), null);
+        userStatsService.recordPostCreated(userId);
+        return postAssembler.toDetail(saved, null);
     }
 
     public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q) {
@@ -88,12 +86,12 @@ public class PostService {
                 ? postRepository.findByCategory(category, pageable)
                 : postRepository.searchByCategory(category, q.trim(), pageable);
 
-        return PageResponse.of(posts, toSummaries(posts.getContent()));
+        return PageResponse.of(posts, postAssembler.toSummaries(posts.getContent()));
     }
 
     public List<PostSummaryResponse> getHotPosts(String categoryValue) {
         Category category = Category.from(categoryValue);
-        return toSummaries(postRepository.findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(category));
+        return postAssembler.toSummaries(postRepository.findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(category));
     }
 
     /**
@@ -110,12 +108,7 @@ public class PostService {
         viewCountService.registerView(postId, viewerKey);
 
         Post post = findPost(postId);
-        String freshNickname = userClient.getNickname(post.getUserId()).orElse(null);
-        String myReaction = viewerId == null ? null
-                : reactionRepository.findByPostIdAndUserId(postId, viewerId)
-                        .map(reaction -> reaction.getType().toLowerValue())
-                        .orElse(null);
-        return PostDetailResponse.of(post, freshNickname, findLevel(post.getUserId()), readContent(post.getContent()), myReaction);
+        return postAssembler.toDetail(post, findMyReaction(postId, viewerId));
     }
 
     @Transactional
@@ -130,17 +123,30 @@ public class PostService {
                 request.thumbnailUrl()
         );
         if (post.getCategory() == Category.RECOMMEND) {
+            if (request.rating() != null) {
+                validateRating(request.rating());
+            }
             post.updateRecommendFields(request.location(), request.rating(), request.lat(), request.lng());
         }
         if (post.getCategory() == Category.MATE) {
             post.updateMateFields(request.region(), request.maxParticipants());
         }
 
-        String freshNickname = userClient.getNickname(post.getUserId()).orElse(null);
-        String myReaction = reactionRepository.findByPostIdAndUserId(postId, userId)
-                .map(reaction -> reaction.getType().toLowerValue())
-                .orElse(null);
-        return PostDetailResponse.of(post, freshNickname, findLevel(post.getUserId()), readContent(post.getContent()), myReaction);
+        return postAssembler.toDetail(post, findMyReaction(postId, userId));
+    }
+
+    /**
+     * QnA 답변 완료 상태 변경 (작성자 전용).
+     */
+    @Transactional
+    public PostDetailResponse updateAnswered(UUID userId, Long postId, boolean answered) {
+        Post post = findPost(postId);
+        postAccessValidator.validateAuthor(post, userId);
+        if (post.getCategory() != Category.QNA) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "QnA 게시판 게시글이 아닙니다.");
+        }
+        post.markAnswered(answered);
+        return postAssembler.toDetail(post, findMyReaction(postId, userId));
     }
 
     @Transactional
@@ -148,6 +154,7 @@ public class PostService {
         Post post = findPost(postId);
         postAccessValidator.validateAuthorOrAdmin(post, userId, isAdmin);
         post.softDelete();
+        userStatsService.recordPostDeleted(post.getUserId());
     }
 
     private Post findPost(Long postId) {
@@ -155,22 +162,13 @@ public class PostService {
                 .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
     }
 
-    private List<PostSummaryResponse> toSummaries(List<Post> posts) {
-        List<UUID> userIds = posts.stream().map(Post::getUserId).distinct().toList();
-        Map<UUID, String> freshNicknames = userClient.getNicknames(userIds);
-        Map<UUID, Integer> levels = userStatsRepository.findAllById(userIds).stream()
-                .collect(Collectors.toMap(UserStats::getUserId, UserStats::getLevel));
-
-        return posts.stream()
-                .map(post -> PostSummaryResponse.of(
-                        post,
-                        freshNicknames.get(post.getUserId()),
-                        levels.getOrDefault(post.getUserId(), 1)))
-                .toList();
-    }
-
-    private int findLevel(UUID userId) {
-        return userStatsRepository.findById(userId).map(UserStats::getLevel).orElse(1);
+    private String findMyReaction(Long postId, UUID viewerId) {
+        if (viewerId == null) {
+            return null;
+        }
+        return reactionRepository.findByPostIdAndUserId(postId, viewerId)
+                .map(reaction -> reaction.getType().toLowerValue())
+                .orElse(null);
     }
 
     private void validateCategoryFields(Category category, PostCreateRequest request) {
@@ -204,14 +202,6 @@ public class PostService {
             return objectMapper.writeValueAsString(content);
         } catch (JsonProcessingException e) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "내용 형식이 올바르지 않습니다.");
-        }
-    }
-
-    private JsonNode readContent(String content) {
-        try {
-            return objectMapper.readTree(content);
-        } catch (JsonProcessingException e) {
-            throw new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "내용을 읽을 수 없습니다.");
         }
     }
 }
