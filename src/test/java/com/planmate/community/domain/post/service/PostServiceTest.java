@@ -11,6 +11,7 @@ import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.validator.PostAccessValidator;
+import com.planmate.community.domain.reaction.repository.ReactionRepository;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -52,6 +53,12 @@ class PostServiceTest {
     @Mock
     private UserClient userClient;
 
+    @Mock
+    private ViewCountService viewCountService;
+
+    @Mock
+    private ReactionRepository reactionRepository;
+
     private PostService postService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -60,7 +67,8 @@ class PostServiceTest {
     @BeforeEach
     void setUp() {
         postService = new PostService(
-                postRepository, userStatsRepository, userClient, new PostAccessValidator(), objectMapper);
+                postRepository, userStatsRepository, userClient, new PostAccessValidator(), objectMapper,
+                viewCountService, reactionRepository);
     }
 
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
@@ -142,11 +150,29 @@ class PostServiceTest {
     @Test
     @DisplayName("존재하지 않는 게시글 조회 시 POST_NOT_FOUND 예외가 발생한다")
     void getPostNotFound() {
-        when(postRepository.findById(99L)).thenReturn(Optional.empty());
+        when(postRepository.existsById(99L)).thenReturn(false);
 
-        assertThatThrownBy(() -> postService.getPost(99L))
+        assertThatThrownBy(() -> postService.getPost(99L, null, "127.0.0.1"))
                 .isInstanceOf(CommunityException.class)
                 .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.POST_NOT_FOUND));
+        verify(viewCountService, never()).registerView(any(), anyString());
+    }
+
+    @Test
+    @DisplayName("상세 조회 시 조회수 등록과 myReaction 조회가 수행된다")
+    void getPostRegistersViewAndMyReaction() {
+        Post post = freePost(userId);
+        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(userClient.getNickname(userId)).thenReturn(Optional.of("최신닉네임"));
+        when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
+        when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
+
+        var response = postService.getPost(1L, userId, userId.toString());
+
+        verify(viewCountService).registerView(1L, userId.toString());
+        assertThat(response.author()).isEqualTo("최신닉네임");
+        assertThat(response.myReaction()).isNull();
     }
 
     @Test

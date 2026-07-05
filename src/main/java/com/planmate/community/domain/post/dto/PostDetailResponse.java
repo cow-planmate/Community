@@ -36,10 +36,13 @@ public record PostDetailResponse(
         // RECOMMEND 전용
         String location,
         String rating,
-        PostSummaryResponse.Coords coords
+        PostSummaryResponse.Coords coords,
+
+        // 로그인 사용자의 반응 (like|dislike|null)
+        String myReaction
 ) {
 
-    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content) {
+    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction) {
         return new PostDetailResponse(
                 post.getPostId(),
                 post.getUserId(),
@@ -65,7 +68,8 @@ public record PostDetailResponse(
                 post.getRating() != null ? post.getRating().toPlainString() : null,
                 post.getLat() != null && post.getLng() != null
                         ? new PostSummaryResponse.Coords(post.getLat(), post.getLng())
-                        : null
+                        : null,
+                myReaction
         );
     }
 }

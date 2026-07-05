@@ -17,6 +17,7 @@ import com.planmate.community.domain.post.enums.MateStatus;
 import com.planmate.community.domain.post.enums.SortType;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.validator.PostAccessValidator;
+import com.planmate.community.domain.reaction.repository.ReactionRepository;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,8 @@ public class PostService {
     private final UserClient userClient;
     private final PostAccessValidator postAccessValidator;
     private final ObjectMapper objectMapper;
+    private final ViewCountService viewCountService;
+    private final ReactionRepository reactionRepository;
 
     @Transactional
     public PostDetailResponse createPost(UUID userId, PostCreateRequest request) {
@@ -73,7 +76,7 @@ public class PostService {
                 .build();
 
         Post saved = postRepository.save(post);
-        return PostDetailResponse.of(saved, nickname, findLevel(userId), request.content());
+        return PostDetailResponse.of(saved, nickname, findLevel(userId), request.content(), null);
     }
 
     public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q) {
@@ -93,10 +96,26 @@ public class PostService {
         return toSummaries(postRepository.findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(category));
     }
 
-    public PostDetailResponse getPost(Long postId) {
+    /**
+     * 상세 조회 — 조회수 증가(조회자별 24h 중복 방지) 후 최신 상태를 반환한다.
+     *
+     * @param viewerId  로그인 사용자 id (비로그인 null)
+     * @param viewerKey 조회수 중복 방지 키 (로그인: userId, 비로그인: 원격 IP)
+     */
+    @Transactional
+    public PostDetailResponse getPost(Long postId, UUID viewerId, String viewerKey) {
+        if (!postRepository.existsById(postId)) {
+            throw new CommunityException(ErrorCode.POST_NOT_FOUND);
+        }
+        viewCountService.registerView(postId, viewerKey);
+
         Post post = findPost(postId);
         String freshNickname = userClient.getNickname(post.getUserId()).orElse(null);
-        return PostDetailResponse.of(post, freshNickname, findLevel(post.getUserId()), readContent(post.getContent()));
+        String myReaction = viewerId == null ? null
+                : reactionRepository.findByPostIdAndUserId(postId, viewerId)
+                        .map(reaction -> reaction.getType().toLowerValue())
+                        .orElse(null);
+        return PostDetailResponse.of(post, freshNickname, findLevel(post.getUserId()), readContent(post.getContent()), myReaction);
     }
 
     @Transactional
@@ -118,7 +137,10 @@ public class PostService {
         }
 
         String freshNickname = userClient.getNickname(post.getUserId()).orElse(null);
-        return PostDetailResponse.of(post, freshNickname, findLevel(post.getUserId()), readContent(post.getContent()));
+        String myReaction = reactionRepository.findByPostIdAndUserId(postId, userId)
+                .map(reaction -> reaction.getType().toLowerValue())
+                .orElse(null);
+        return PostDetailResponse.of(post, freshNickname, findLevel(post.getUserId()), readContent(post.getContent()), myReaction);
     }
 
     @Transactional

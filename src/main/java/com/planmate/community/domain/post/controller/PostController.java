@@ -8,6 +8,7 @@ import com.planmate.community.domain.post.dto.PostUpdateRequest;
 import com.planmate.community.domain.post.service.PostService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -52,10 +53,16 @@ public class PostController {
         return ResponseEntity.ok(postService.getHotPosts(category));
     }
 
-    @Operation(summary = "게시글 상세 조회", description = "게시글 상세 내용을 조회합니다.")
+    @Operation(summary = "게시글 상세 조회", description = "게시글 상세 내용을 조회합니다. 조회수는 조회자별 24시간 1회 증가합니다.")
     @GetMapping("/{postId}")
-    public ResponseEntity<PostDetailResponse> getPost(@PathVariable("postId") Long postId) {
-        return ResponseEntity.ok(postService.getPost(postId));
+    public ResponseEntity<PostDetailResponse> getPost(
+            @PathVariable("postId") Long postId,
+            Authentication authentication,
+            HttpServletRequest request
+    ) {
+        UUID viewerId = authentication != null ? UUID.fromString(authentication.getName()) : null;
+        String viewerKey = viewerId != null ? viewerId.toString() : request.getRemoteAddr();
+        return ResponseEntity.ok(postService.getPost(postId, viewerId, viewerKey));
     }
 
     @Operation(summary = "게시글 작성", description = "게시판별 필드를 포함한 게시글을 작성합니다.")
