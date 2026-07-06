@@ -40,6 +40,7 @@ public class CommentService {
     @Transactional
     public CommentResponse createComment(UUID userId, Long postId, CommentCreateRequest request) {
         ensurePostExists(postId);
+        validateParent(postId, request.parentId());
 
         String nickname = userClient.getNickname(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
@@ -49,6 +50,7 @@ public class CommentService {
                 .userId(userId)
                 .authorNickname(nickname)
                 .content(request.content())
+                .parentId(request.parentId())
                 .build();
 
         Comment saved = commentRepository.save(comment);
@@ -96,14 +98,37 @@ public class CommentService {
         if (!isAdmin && !comment.isAuthor(userId)) {
             throw new CommunityException(ErrorCode.COMMENT_ACCESS_DENIED);
         }
+
+        // 최상위 댓글이면 살아있는 대댓글도 연쇄 soft-delete (삭제행은 @SQLRestriction으로 숨겨져 대댓글이 고아 노출되는 것을 방지)
+        List<Comment> replies = comment.getParentId() == null
+                ? commentRepository.findByParentId(comment.getCommentId())
+                : List.of();
+
         comment.softDelete();
-        postRepository.addCommentCount(comment.getPostId(), -1);
+        replies.forEach(Comment::softDelete);
+
+        postRepository.addCommentCount(comment.getPostId(), -(1 + replies.size()));
         userStatsService.recordCommentDeleted(comment.getUserId());
+        replies.forEach(reply -> userStatsService.recordCommentDeleted(reply.getUserId()));
     }
 
     private Comment findComment(Long commentId) {
         return commentRepository.findById(commentId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.COMMENT_NOT_FOUND));
+    }
+
+    // 대댓글 생성 검증 — 부모 존재(soft-delete 제외), 같은 게시글, 깊이 1 제한
+    private void validateParent(Long postId, Long parentId) {
+        if (parentId == null) {
+            return;
+        }
+        Comment parent = findComment(parentId);
+        if (!parent.getPostId().equals(postId)) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "부모 댓글이 다른 게시글에 속합니다.");
+        }
+        if (parent.getParentId() != null) {
+            throw new CommunityException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
+        }
     }
 
     private void ensurePostExists(Long postId) {

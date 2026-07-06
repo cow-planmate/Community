@@ -22,6 +22,7 @@ public enum ErrorCode {
     // 댓글
     COMMENT_NOT_FOUND(HttpStatus.NOT_FOUND, "COMMENT_001", "댓글을 찾을 수 없습니다."),
     COMMENT_ACCESS_DENIED(HttpStatus.FORBIDDEN, "COMMENT_002", "댓글에 대한 권한이 없습니다."),
+    COMMENT_REPLY_DEPTH_EXCEEDED(HttpStatus.BAD_REQUEST, "COMMENT_003", "대댓글에는 답글을 달 수 없습니다."),
 
     // 메이트 모집
     MATE_ALREADY_JOINED(HttpStatus.CONFLICT, "MATE_001", "이미 참여한 메이트 모집입니다."),

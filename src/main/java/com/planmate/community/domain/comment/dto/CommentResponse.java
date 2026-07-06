@@ -8,6 +8,7 @@ import java.util.UUID;
 public record CommentResponse(
         Long id,
         Long postId,
+        Long parentId,
         UUID userId,
         String author,
         int level,
@@ -20,6 +21,7 @@ public record CommentResponse(
         return new CommentResponse(
                 comment.getCommentId(),
                 comment.getPostId(),
+                comment.getParentId(),
                 comment.getUserId(),
                 freshNickname != null ? freshNickname : comment.getAuthorNickname(),
                 level,
