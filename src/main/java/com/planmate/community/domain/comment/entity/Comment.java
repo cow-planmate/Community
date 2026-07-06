@@ -42,6 +42,10 @@ public class Comment extends BaseSoftDeleteEntity {
     @Column(nullable = false, columnDefinition = "TEXT")
     private String content;
 
+    // 대댓글 (1단계): 부모 댓글 ID, 최상위 댓글이면 null
+    @Column(name = "parent_id")
+    private Long parentId;
+
     public boolean isAuthor(UUID userId) {
         return this.userId.equals(userId);
     }

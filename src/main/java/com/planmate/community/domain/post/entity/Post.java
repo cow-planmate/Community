@@ -102,6 +102,25 @@ public class Post extends BaseSoftDeleteEntity {
 
     private Double lng;
 
+    // FEED 전용
+    @Column(name = "duration_days")
+    private Integer durationDays;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String itinerary;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String tags;
+
+    @Column(name = "source_plan_id")
+    private UUID sourcePlanId;
+
+    @Column(name = "fork_count", nullable = false)
+    @Builder.Default
+    private int forkCount = 0;
+
     public boolean isAuthor(UUID userId) {
         return this.userId.equals(userId);
     }

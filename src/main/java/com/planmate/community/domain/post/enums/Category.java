@@ -7,7 +7,7 @@ import java.util.Locale;
 
 public enum Category {
 
-    FREE, QNA, MATE, RECOMMEND;
+    FREE, QNA, MATE, RECOMMEND, FEED;
 
     public static Category from(String value) {
         if (value == null || value.isBlank()) {
