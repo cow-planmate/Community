@@ -40,8 +40,11 @@ public record PostSummaryResponse(
         // FEED 전용 (비-FEED는 null로 응답에서 생략)
         Integer durationDays,
         Integer forks,
-        List<String> tags
+        List<String> tags,
+        String description
 ) {
+
+    private static final int DESCRIPTION_PREVIEW_LENGTH = 200;
 
     public record Coords(double lat, double lng) {
     }
@@ -70,7 +73,17 @@ public record PostSummaryResponse(
                 post.getLat() != null && post.getLng() != null ? new Coords(post.getLat(), post.getLng()) : null,
                 post.getDurationDays(),
                 post.getCategory() == Category.FEED ? post.getForkCount() : null,
-                tags
+                tags,
+                post.getCategory() == Category.FEED ? previewOf(post.getContentText()) : null
         );
+    }
+
+    // 피드 카드 본문 미리보기 — contentText 앞부분만 잘라 목록 페이로드를 가볍게 유지
+    private static String previewOf(String contentText) {
+        if (contentText == null || contentText.isBlank()) {
+            return null;
+        }
+        String trimmed = contentText.strip();
+        return trimmed.length() <= DESCRIPTION_PREVIEW_LENGTH ? trimmed : trimmed.substring(0, DESCRIPTION_PREVIEW_LENGTH);
     }
 }
