@@ -3,8 +3,10 @@ package com.planmate.community.domain.post.dto;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.enums.Category;
 
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.UUID;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -39,11 +41,20 @@ public record PostDetailResponse(
         String rating,
         PostSummaryResponse.Coords coords,
 
+        // FEED 전용 (비-FEED는 null로 응답에서 생략)
+        Integer durationDays,
+        Integer forks,
+        List<String> tags,
+        JsonNode itinerary,
+        UUID sourcePlanId,
+        Boolean myFork,
+
         // 로그인 사용자의 반응 (like|dislike|null)
         String myReaction
 ) {
 
-    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction, Integer participants) {
+    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction,
+                                        Integer participants, List<String> tags, JsonNode itinerary) {
         return new PostDetailResponse(
                 post.getPostId(),
                 post.getUserId(),
@@ -70,6 +81,12 @@ public record PostDetailResponse(
                 post.getLat() != null && post.getLng() != null
                         ? new PostSummaryResponse.Coords(post.getLat(), post.getLng())
                         : null,
+                post.getDurationDays(),
+                post.getCategory() == Category.FEED ? post.getForkCount() : null,
+                tags,
+                itinerary,
+                post.getSourcePlanId(),
+                null, // myFork는 포크 API(M3)에서 채운다
                 myReaction
         );
     }

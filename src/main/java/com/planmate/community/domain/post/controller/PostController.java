@@ -6,6 +6,7 @@ import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
+import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.service.PostService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -36,16 +37,26 @@ public class PostController {
 
     private final PostService postService;
 
-    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views)을 지원합니다.")
+    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다.")
     @GetMapping
     public ResponseEntity<PageResponse<PostSummaryResponse>> getPosts(
             @RequestParam("category") String category,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size,
             @RequestParam(value = "sort", defaultValue = "latest") String sort,
-            @RequestParam(value = "q", required = false) String q
+            @RequestParam(value = "q", required = false) String q,
+            @RequestParam(value = "region", required = false) String region,
+            @RequestParam(value = "minDays", required = false) Integer minDays,
+            @RequestParam(value = "maxDays", required = false) Integer maxDays,
+            @RequestParam(value = "tag", required = false) String tag
     ) {
-        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q));
+        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q, region, minDays, maxDays, tag));
+    }
+
+    @Operation(summary = "지역별 게시글 수 집계", description = "카테고리 내 지역(region)별 게시글 수를 집계합니다.")
+    @GetMapping("/regions")
+    public ResponseEntity<List<RegionCountResponse>> getRegionCounts(@RequestParam("category") String category) {
+        return ResponseEntity.ok(postService.getRegionCounts(category));
     }
 
     @Operation(summary = "핫 게시글 조회", description = "게시판별 좋아요 상위 3개 게시글을 조회합니다.")

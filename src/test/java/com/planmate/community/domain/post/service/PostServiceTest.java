@@ -1,12 +1,15 @@
 package com.planmate.community.domain.post.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
+import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
@@ -38,6 +41,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -83,7 +87,15 @@ class PostServiceTest {
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
         return new PostCreateRequest(
                 category, "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                location, rating, null, null, region, maxParticipants);
+                location, rating, null, null, region, maxParticipants,
+                null, null, null, null);
+    }
+
+    private PostCreateRequest feedRequest(String region, Integer durationDays, JsonNode itinerary, List<String> tags) {
+        return new PostCreateRequest(
+                "feed", "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
+                null, null, null, null, region, null,
+                durationDays, itinerary, tags, null);
     }
 
     @Test
@@ -209,11 +221,169 @@ class PostServiceTest {
         when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("free", 0, 20, "latest", null);
+        postService.getPosts("free", 0, 20, "latest", null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FREE), any(Pageable.class));
 
-        postService.getPosts("free", 0, 20, "latest", "맛집");
+        postService.getPosts("free", 0, 20, "latest", "맛집", null, null, null, null);
         verify(postRepository).searchByCategory(eq(Category.FREE), eq("맛집"), any(Pageable.class));
+    }
+
+    @Test
+    @DisplayName("피드 게시글은 지역이 없으면 INVALID_INPUT 예외가 발생한다")
+    void createFeedPostWithoutRegion() {
+        assertThatThrownBy(() -> postService.createPost(userId, feedRequest(null, 3, null, null)))
+                .isInstanceOf(CommunityException.class)
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT))
+                .hasMessageContaining("지역");
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("피드 게시글은 여행 기간이 없거나 1일 미만이면 INVALID_INPUT 예외가 발생한다")
+    void createFeedPostWithInvalidDuration() {
+        assertThatThrownBy(() -> postService.createPost(userId, feedRequest("서울", null, null, null)))
+                .isInstanceOf(CommunityException.class)
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT))
+                .hasMessageContaining("기간");
+        assertThatThrownBy(() -> postService.createPost(userId, feedRequest("서울", 0, null, null)))
+                .isInstanceOf(CommunityException.class)
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT));
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("피드 일정의 days가 비어 있으면 INVALID_INPUT 예외가 발생한다")
+    void createFeedPostWithEmptyItineraryDays() {
+        ObjectNode itinerary = objectMapper.createObjectNode();
+        itinerary.putArray("days");
+
+        assertThatThrownBy(() -> postService.createPost(userId, feedRequest("서울", 3, itinerary, null)))
+                .isInstanceOf(CommunityException.class)
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT))
+                .hasMessageContaining("days");
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("피드 일정 항목에 time이나 place가 없으면 INVALID_INPUT 예외가 발생한다")
+    void createFeedPostWithInvalidItineraryItem() {
+        ObjectNode itinerary = objectMapper.createObjectNode();
+        ObjectNode day = itinerary.putArray("days").addObject();
+        day.put("day", 1);
+        day.putArray("items").addObject().put("time", "10:00"); // place 누락
+
+        assertThatThrownBy(() -> postService.createPost(userId, feedRequest("서울", 3, itinerary, null)))
+                .isInstanceOf(CommunityException.class)
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT))
+                .hasMessageContaining("place");
+        verify(postRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("피드 게시글 생성 시 피드 필드가 직렬화되어 저장되고 응답에 반영된다")
+    void createFeedPostStoresFeedFields() throws Exception {
+        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
+            Post post = invocation.getArgument(0);
+            ReflectionTestUtils.setField(post, "postId", 1L);
+            return post;
+        });
+
+        ObjectNode itinerary = objectMapper.createObjectNode();
+        ObjectNode day = itinerary.putArray("days").addObject();
+        day.put("day", 1);
+        ObjectNode item = day.putArray("items").addObject();
+        item.put("time", "10:00");
+        item.put("place", "경복궁");
+
+        var response = postService.createPost(userId, feedRequest("서울", 3, itinerary, List.of("#극한의J")));
+
+        ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
+        verify(postRepository).save(captor.capture());
+        Post saved = captor.getValue();
+        assertThat(saved.getRegion()).isEqualTo("서울");
+        assertThat(saved.getDurationDays()).isEqualTo(3);
+        assertThat(saved.getItinerary()).isEqualTo(objectMapper.writeValueAsString(itinerary));
+        assertThat(saved.getTags()).isEqualTo(objectMapper.writeValueAsString(List.of("#극한의J")));
+        assertThat(saved.getForkCount()).isZero();
+        verify(userStatsService).recordPostCreated(userId);
+        assertThat(response.durationDays()).isEqualTo(3);
+        assertThat(response.forks()).isZero();
+        assertThat(response.tags()).containsExactly("#극한의J");
+        assertThat(response.itinerary()).isEqualTo(itinerary);
+        assertThat(response.myFork()).isNull();
+    }
+
+    @Test
+    @DisplayName("피드가 아닌 게시글 생성 시 피드 전용 필드는 null로 저장된다")
+    void createNonFeedPostIgnoresFeedFields() {
+        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
+        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
+            Post post = invocation.getArgument(0);
+            ReflectionTestUtils.setField(post, "postId", 1L);
+            return post;
+        });
+
+        PostCreateRequest request = new PostCreateRequest(
+                "free", "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
+                null, null, null, null, null, null,
+                3, objectMapper.createObjectNode(), List.of("#태그"), UUID.randomUUID());
+
+        var response = postService.createPost(userId, request);
+
+        ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
+        verify(postRepository).save(captor.capture());
+        Post saved = captor.getValue();
+        assertThat(saved.getDurationDays()).isNull();
+        assertThat(saved.getItinerary()).isNull();
+        assertThat(saved.getTags()).isNull();
+        assertThat(saved.getSourcePlanId()).isNull();
+        assertThat(response.durationDays()).isNull();
+        assertThat(response.forks()).isNull();
+        assertThat(response.tags()).isNull();
+        assertThat(response.itinerary()).isNull();
+    }
+
+    @Test
+    @DisplayName("피드에 필터가 있으면 전용 쿼리를, 없으면 카테고리 조회를 사용한다")
+    void getFeedPostsQueryRouting() {
+        when(postRepository.findByCategory(eq(Category.FEED), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(postRepository.findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userStatsRepository.findAllById(any())).thenReturn(List.of());
+
+        postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null);
+        verify(postRepository).findByCategory(eq(Category.FEED), any(Pageable.class));
+        verify(postRepository, never()).findFeedPosts(any(), any(), any(), any(), any(), any(), any());
+
+        postService.getPosts("feed", 0, 20, "forks", null, "서울", 2, 3, "#극한의J");
+        ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
+        verify(postRepository).findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), pageableCaptor.capture());
+        assertThat(pageableCaptor.getValue().getSort().getOrderFor("forkCount")).isNotNull();
+    }
+
+    @Test
+    @DisplayName("지역 집계는 리포지토리 결과를 응답 DTO로 매핑한다")
+    void getRegionCounts() {
+        PostRepository.RegionCount seoul = new PostRepository.RegionCount() {
+            @Override
+            public String getRegion() {
+                return "서울";
+            }
+
+            @Override
+            public long getPostCount() {
+                return 3;
+            }
+        };
+        when(postRepository.countRegionsByCategory(Category.FEED)).thenReturn(List.of(seoul));
+
+        assertThat(postService.getRegionCounts("feed"))
+                .containsExactly(new RegionCountResponse("서울", 3));
     }
 
     private Post freePost(UUID authorId) {

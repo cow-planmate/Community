@@ -6,6 +6,8 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.util.List;
+import java.util.UUID;
 
 public record PostCreateRequest(
         @NotBlank(message = "카테고리는 필수입니다.")
@@ -30,6 +32,12 @@ public record PostCreateRequest(
 
         // MATE 전용
         String region,
-        Integer maxParticipants
+        Integer maxParticipants,
+
+        // FEED 전용 (region은 MATE와 공용)
+        Integer durationDays,
+        JsonNode itinerary,
+        List<String> tags,
+        UUID sourcePlanId
 ) {
 }

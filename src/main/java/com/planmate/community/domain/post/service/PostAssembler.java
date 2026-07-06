@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.planmate.community.common.client.UserClient;
@@ -44,7 +45,8 @@ public class PostAssembler {
                         post,
                         freshNicknames.get(post.getUserId()),
                         levels.getOrDefault(post.getUserId(), 1),
-                        participantsFor(post, participantCounts)))
+                        participantsFor(post, participantCounts),
+                        readTags(post)))
                 .toList();
     }
 
@@ -54,7 +56,8 @@ public class PostAssembler {
         Integer participants = post.getCategory() == Category.MATE
                 ? (int) mateParticipantRepository.countByPostId(post.getPostId())
                 : null;
-        return PostDetailResponse.of(post, freshNickname, level, readContent(post.getContent()), myReaction, participants);
+        return PostDetailResponse.of(post, freshNickname, level, readContent(post.getContent()), myReaction, participants,
+                readTags(post), post.getItinerary() != null ? readContent(post.getItinerary()) : null);
     }
 
     public JsonNode readContent(String content) {
@@ -62,6 +65,18 @@ public class PostAssembler {
             return objectMapper.readTree(content);
         } catch (JsonProcessingException e) {
             throw new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "내용을 읽을 수 없습니다.");
+        }
+    }
+
+    private List<String> readTags(Post post) {
+        if (post.getTags() == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(post.getTags(), new TypeReference<List<String>>() {
+            });
+        } catch (JsonProcessingException e) {
+            throw new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "태그를 읽을 수 없습니다.");
         }
     }
 

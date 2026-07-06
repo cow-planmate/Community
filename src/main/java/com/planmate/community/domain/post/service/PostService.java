@@ -11,6 +11,7 @@ import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
+import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
@@ -63,13 +64,18 @@ public class PostService {
                 .contentText(request.contentText() != null ? request.contentText() : "")
                 .thumbnailUrl(request.thumbnailUrl())
                 .isAnswered(category == Category.QNA ? Boolean.FALSE : null)
-                .region(category == Category.MATE ? request.region() : null)
+                .region(category == Category.MATE || category == Category.FEED ? request.region() : null)
                 .maxParticipants(category == Category.MATE ? request.maxParticipants() : null)
                 .status(category == Category.MATE ? MateStatus.RECRUITING : null)
-                .location(category == Category.RECOMMEND ? request.location() : null)
+                .location(category == Category.RECOMMEND || category == Category.FEED ? request.location() : null)
                 .rating(category == Category.RECOMMEND ? request.rating() : null)
-                .lat(category == Category.RECOMMEND ? request.lat() : null)
-                .lng(category == Category.RECOMMEND ? request.lng() : null)
+                .lat(category == Category.RECOMMEND || category == Category.FEED ? request.lat() : null)
+                .lng(category == Category.RECOMMEND || category == Category.FEED ? request.lng() : null)
+                .durationDays(category == Category.FEED ? request.durationDays() : null)
+                .itinerary(category == Category.FEED ? writeItinerary(request.itinerary()) : null)
+                .tags(category == Category.FEED && request.tags() != null && !request.tags().isEmpty()
+                        ? writeJson(request.tags()) : null)
+                .sourcePlanId(category == Category.FEED ? request.sourcePlanId() : null)
                 .build();
 
         Post saved = postRepository.save(post);
@@ -77,16 +83,31 @@ public class PostService {
         return postAssembler.toDetail(saved, null);
     }
 
-    public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q) {
+    public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q,
+                                                      String region, Integer minDays, Integer maxDays, String tag) {
         Category category = Category.from(categoryValue);
         SortType sortType = SortType.from(sortValue);
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE), sortType.toSort());
 
-        Page<Post> posts = (q == null || q.isBlank())
-                ? postRepository.findByCategory(category, pageable)
-                : postRepository.searchByCategory(category, q.trim(), pageable);
-
+        Page<Post> posts = findPostsPage(category, normalizeBlank(q), normalizeBlank(region), minDays, maxDays, normalizeBlank(tag), pageable);
         return PageResponse.of(posts, postAssembler.toSummaries(posts.getContent()));
+    }
+
+    // FEED에 피드 필터가 하나라도 있으면 전용 쿼리로, 아니면 기존 조회/검색 쿼리로 라우팅한다
+    private Page<Post> findPostsPage(Category category, String q, String region, Integer minDays, Integer maxDays, String tag, Pageable pageable) {
+        if (category == Category.FEED && (region != null || minDays != null || maxDays != null || tag != null)) {
+            return postRepository.findFeedPosts(category, region, minDays, maxDays, tag, q, pageable);
+        }
+        return q == null
+                ? postRepository.findByCategory(category, pageable)
+                : postRepository.searchByCategory(category, q, pageable);
+    }
+
+    public List<RegionCountResponse> getRegionCounts(String categoryValue) {
+        Category category = Category.from(categoryValue);
+        return postRepository.countRegionsByCategory(category).stream()
+                .map(RegionCountResponse::of)
+                .toList();
     }
 
     public List<PostSummaryResponse> getHotPosts(String categoryValue) {
@@ -171,6 +192,10 @@ public class PostService {
                 .orElse(null);
     }
 
+    private String normalizeBlank(String value) {
+        return value == null || value.isBlank() ? null : value.trim();
+    }
+
     private void validateCategoryFields(Category category, PostCreateRequest request) {
         if (category == Category.RECOMMEND) {
             if (request.location() == null || request.location().isBlank()) {
@@ -189,6 +214,44 @@ public class PostService {
                 throw new CommunityException(ErrorCode.INVALID_INPUT, "모집 인원은 2명 이상이어야 합니다.");
             }
         }
+        if (category == Category.FEED) {
+            if (request.region() == null || request.region().isBlank()) {
+                throw new CommunityException(ErrorCode.INVALID_INPUT, "피드 게시글은 지역 정보가 필수입니다.");
+            }
+            if (request.durationDays() == null || request.durationDays() < 1) {
+                throw new CommunityException(ErrorCode.INVALID_INPUT, "피드 게시글은 1일 이상의 여행 기간이 필수입니다.");
+            }
+            validateItinerary(request.itinerary());
+        }
+    }
+
+    // itinerary 구조 검증 (선택 필드) — days는 비어있지 않은 배열, 각 항목에 time·place 필수
+    private void validateItinerary(JsonNode itinerary) {
+        if (itinerary == null || itinerary.isNull()) {
+            return;
+        }
+        JsonNode days = itinerary.get("days");
+        if (days == null || !days.isArray() || days.isEmpty()) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정에는 비어있지 않은 days 배열이 필요합니다.");
+        }
+        for (JsonNode day : days) {
+            JsonNode items = day.get("items");
+            if (items == null) {
+                continue;
+            }
+            if (!items.isArray()) {
+                throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 items는 배열이어야 합니다.");
+            }
+            for (JsonNode item : items) {
+                if (isBlankText(item.get("time")) || isBlankText(item.get("place"))) {
+                    throw new CommunityException(ErrorCode.INVALID_INPUT, "일정 항목에는 time과 place가 필수입니다.");
+                }
+            }
+        }
+    }
+
+    private boolean isBlankText(JsonNode node) {
+        return node == null || !node.isTextual() || node.asText().isBlank();
     }
 
     private void validateRating(BigDecimal rating) {
@@ -198,8 +261,16 @@ public class PostService {
     }
 
     private String writeContent(JsonNode content) {
+        return writeJson(content);
+    }
+
+    private String writeItinerary(JsonNode itinerary) {
+        return itinerary == null || itinerary.isNull() ? null : writeJson(itinerary);
+    }
+
+    private String writeJson(Object value) {
         try {
-            return objectMapper.writeValueAsString(content);
+            return objectMapper.writeValueAsString(value);
         } catch (JsonProcessingException e) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "내용 형식이 올바르지 않습니다.");
         }

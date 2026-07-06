@@ -6,7 +6,7 @@ import java.util.Locale;
 
 public enum SortType {
 
-    LATEST, LIKES, VIEWS;
+    LATEST, LIKES, VIEWS, FORKS;
 
     public static SortType from(String value) {
         if (value == null || value.isBlank()) {
@@ -24,6 +24,7 @@ public enum SortType {
             case LATEST -> Sort.by(Sort.Order.desc("createdAt"));
             case LIKES -> Sort.by(Sort.Order.desc("likeCount"), Sort.Order.desc("createdAt"));
             case VIEWS -> Sort.by(Sort.Order.desc("viewCount"), Sort.Order.desc("createdAt"));
+            case FORKS -> Sort.by(Sort.Order.desc("forkCount"), Sort.Order.desc("createdAt"));
         };
     }
 }

@@ -24,6 +24,37 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             """)
     Page<Post> searchByCategory(@Param("category") Category category, @Param("q") String q, Pageable pageable);
 
+    // FEED 목록 필터 — 조건은 전부 null-safe (null이면 미적용)
+    // 함수 인자의 cast(... as string)은 필수: 파라미터가 null일 때 PG가 타입을 추론하지 못해 bytea로 간주한다
+    @Query("""
+            SELECT p FROM Post p
+            WHERE p.category = :category
+              AND (:region IS NULL OR p.region = :region)
+              AND (:minDays IS NULL OR p.durationDays >= :minDays)
+              AND (:maxDays IS NULL OR p.durationDays <= :maxDays)
+              AND (:tag IS NULL OR function('jsonb_exists', p.tags, cast(:tag as string)) = TRUE)
+              AND (:q IS NULL
+                OR lower(p.title) LIKE lower(concat('%', cast(:q as string), '%'))
+                OR lower(p.contentText) LIKE lower(concat('%', cast(:q as string), '%')))
+            """)
+    Page<Post> findFeedPosts(@Param("category") Category category,
+                             @Param("region") String region,
+                             @Param("minDays") Integer minDays,
+                             @Param("maxDays") Integer maxDays,
+                             @Param("tag") String tag,
+                             @Param("q") String q,
+                             Pageable pageable);
+
+    // 지역별 게시글 수 집계 (피드 지도/필터용)
+    @Query("""
+            SELECT p.region AS region, COUNT(p) AS postCount
+            FROM Post p
+            WHERE p.category = :category AND p.region IS NOT NULL
+            GROUP BY p.region
+            ORDER BY COUNT(p) DESC, p.region ASC
+            """)
+    List<RegionCount> countRegionsByCategory(@Param("category") Category category);
+
     List<Post> findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(Category category);
 
     Page<Post> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
@@ -54,4 +85,10 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Post p SET p.viewCount = p.viewCount + 1 WHERE p.postId = :postId")
     void incrementViewCount(@Param("postId") Long postId);
+
+    interface RegionCount {
+        String getRegion();
+
+        long getPostCount();
+    }
 }
