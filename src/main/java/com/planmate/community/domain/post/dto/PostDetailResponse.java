@@ -32,6 +32,7 @@ public record PostDetailResponse(
         Integer participants,
         Integer maxParticipants,
         String status,
+        String region,
 
         // RECOMMEND 전용
         String location,
@@ -63,6 +64,7 @@ public record PostDetailResponse(
                 participants,
                 post.getMaxParticipants(),
                 post.getStatus() != null ? post.getStatus().toLowerValue() : null,
+                post.getRegion(),
                 post.getLocation(),
                 post.getRating() != null ? post.getRating().toPlainString() : null,
                 post.getLat() != null && post.getLng() != null

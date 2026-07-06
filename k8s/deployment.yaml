@@ -1,0 +1,126 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: community-service
+  namespace: default
+  labels:
+    app: community-service
+spec:
+  replicas: 1
+  revisionHistoryLimit: 3
+  selector:
+    matchLabels:
+      app: community-service
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: community-service
+    spec:
+      # 이미지가 amd64로 빌드되는 동안은 레거시 백엔드와 동일하게 amd64 노드 고정
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+            - matchExpressions:
+              - key: kubernetes.io/arch
+                operator: In
+                values:
+                - amd64
+      containers:
+      - name: community-service
+        image: cycle123/planmate-community:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: TZ
+          value: "Asia/Seoul"
+        - name: SERVER_PORT
+          value: "8080"
+        # ── DB: 기존 클러스터의 별도 database 'community' (프로비저닝은 README 참고) ──
+        - name: SPRING_DATASOURCE_URL
+          value: "jdbc:postgresql://planmate-db-rw:5432/community"
+        - name: SPRING_DATASOURCE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: community-db-secret
+              key: username
+        - name: SPRING_DATASOURCE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: community-db-secret
+              key: password
+        # ── JWT: 레거시 백엔드와 동일한 access secret 재사용 (base64 파생) ──
+        # Backend-v2 전환 시: JWT_SECRET → v2 시크릿, JWT_SECRET_ENCODING → raw
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: planmate-secret
+              key: JWT_ACCESS_SECRET
+        - name: JWT_SECRET_ENCODING
+          value: "base64"
+        # ── Redis (조회수 dedupe·닉네임 캐시 — 장애 시 fail-open이라 필수 아님) ──
+        # 클러스터의 redis 마스터 Service 이름에 맞출 것 (레거시는 Sentinel 사용)
+        - name: SPRING_DATA_REDIS_HOST
+          value: "redis-master"
+        - name: SPRING_DATA_REDIS_PORT
+          value: "6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: planmate-secret
+              key: REDIS_PASSWORD
+        # ── 내부 사용자 API (레거시 백엔드) ──
+        - name: MAIN_BACKEND_URL
+          value: "http://planmate-backend-service"
+        - name: INTERNAL_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: planmate-secret
+              key: INTERNAL_API_TOKEN
+        # ── MinIO (버킷은 서비스가 자동 생성 + 공개읽기 정책) ──
+        - name: MINIO_ENDPOINT
+          valueFrom:
+            configMapKeyRef:
+              name: planmate-config
+              key: MINIO_ENDPOINT
+        - name: MINIO_BUCKET
+          value: "community"
+        - name: MINIO_PUBLIC_URL
+          value: "https://minio.salmakis.cloud"
+        - name: MINIO_ACCESS_KEY
+          valueFrom:
+            secretKeyRef:
+              name: planmate-secret
+              key: MINIO_ACCESS_KEY
+        - name: MINIO_SECRET_KEY
+          valueFrom:
+            secretKeyRef:
+              name: planmate-secret
+              key: MINIO_SECRET_KEY
+        - name: JAVA_TOOL_OPTIONS
+          value: "-Xms128m -Xmx512m"
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "100m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        livenessProbe:
+          httpGet:
+            path: /actuator/health/liveness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
