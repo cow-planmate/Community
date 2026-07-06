@@ -28,6 +28,9 @@ public enum ErrorCode {
     MATE_FULL(HttpStatus.CONFLICT, "MATE_002", "모집 인원이 가득 찼습니다."),
     MATE_NOT_JOINED(HttpStatus.BAD_REQUEST, "MATE_003", "참여하지 않은 메이트 모집입니다."),
     MATE_CLOSED(HttpStatus.CONFLICT, "MATE_004", "마감된 메이트 모집입니다."),
+
+    // 피드
+    FEED_ALREADY_FORKED(HttpStatus.CONFLICT, "FEED_001", "이미 가져간 일정입니다."),
     ;
 
     private final HttpStatus httpStatus;

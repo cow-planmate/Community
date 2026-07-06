@@ -50,14 +50,14 @@ public class PostAssembler {
                 .toList();
     }
 
-    public PostDetailResponse toDetail(Post post, String myReaction) {
+    public PostDetailResponse toDetail(Post post, String myReaction, Boolean myFork) {
         String freshNickname = userClient.getNickname(post.getUserId()).orElse(null);
         int level = userStatsRepository.findById(post.getUserId()).map(UserStats::getLevel).orElse(1);
         Integer participants = post.getCategory() == Category.MATE
                 ? (int) mateParticipantRepository.countByPostId(post.getPostId())
                 : null;
         return PostDetailResponse.of(post, freshNickname, level, readContent(post.getContent()), myReaction, participants,
-                readTags(post), post.getItinerary() != null ? readContent(post.getItinerary()) : null);
+                readTags(post), post.getItinerary() != null ? readContent(post.getItinerary()) : null, myFork);
     }
 
     public JsonNode readContent(String content) {

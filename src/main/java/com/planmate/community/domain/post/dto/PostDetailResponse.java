@@ -54,7 +54,7 @@ public record PostDetailResponse(
 ) {
 
     public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction,
-                                        Integer participants, List<String> tags, JsonNode itinerary) {
+                                        Integer participants, List<String> tags, JsonNode itinerary, Boolean myFork) {
         return new PostDetailResponse(
                 post.getPostId(),
                 post.getUserId(),
@@ -86,7 +86,7 @@ public record PostDetailResponse(
                 tags,
                 itinerary,
                 post.getSourcePlanId(),
-                null, // myFork는 포크 API(M3)에서 채운다
+                myFork,
                 myReaction
         );
     }

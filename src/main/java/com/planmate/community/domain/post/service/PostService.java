@@ -7,6 +7,7 @@ import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
@@ -44,6 +45,7 @@ public class PostService {
     private final ObjectMapper objectMapper;
     private final ViewCountService viewCountService;
     private final ReactionRepository reactionRepository;
+    private final FeedForkRepository feedForkRepository;
     private final PostAssembler postAssembler;
     private final UserStatsService userStatsService;
 
@@ -80,7 +82,7 @@ public class PostService {
 
         Post saved = postRepository.save(post);
         userStatsService.recordPostCreated(userId);
-        return postAssembler.toDetail(saved, null);
+        return postAssembler.toDetail(saved, null, null);
     }
 
     public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q,
@@ -129,7 +131,7 @@ public class PostService {
         viewCountService.registerView(postId, viewerKey);
 
         Post post = findPost(postId);
-        return postAssembler.toDetail(post, findMyReaction(postId, viewerId));
+        return postAssembler.toDetail(post, findMyReaction(postId, viewerId), findMyFork(post, viewerId));
     }
 
     @Transactional
@@ -153,7 +155,7 @@ public class PostService {
             post.updateMateFields(request.region(), request.maxParticipants());
         }
 
-        return postAssembler.toDetail(post, findMyReaction(postId, userId));
+        return postAssembler.toDetail(post, findMyReaction(postId, userId), findMyFork(post, userId));
     }
 
     /**
@@ -167,7 +169,7 @@ public class PostService {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "QnA 게시판 게시글이 아닙니다.");
         }
         post.markAnswered(answered);
-        return postAssembler.toDetail(post, findMyReaction(postId, userId));
+        return postAssembler.toDetail(post, findMyReaction(postId, userId), findMyFork(post, userId));
     }
 
     @Transactional
@@ -190,6 +192,14 @@ public class PostService {
         return reactionRepository.findByPostIdAndUserId(postId, viewerId)
                 .map(reaction -> reaction.getType().toLowerValue())
                 .orElse(null);
+    }
+
+    // FEED 상세에서 로그인 사용자의 가져가기 여부 (비로그인·비FEED는 null → 응답에서 생략)
+    private Boolean findMyFork(Post post, UUID viewerId) {
+        if (viewerId == null || post.getCategory() != Category.FEED) {
+            return null;
+        }
+        return feedForkRepository.existsByPostIdAndUserId(post.getPostId(), viewerId);
     }
 
     private String normalizeBlank(String value) {

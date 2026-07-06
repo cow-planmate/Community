@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
@@ -68,6 +69,9 @@ class PostServiceTest {
     private ReactionRepository reactionRepository;
 
     @Mock
+    private FeedForkRepository feedForkRepository;
+
+    @Mock
     private UserStatsService userStatsService;
 
     private PostService postService;
@@ -81,7 +85,7 @@ class PostServiceTest {
                 userClient, userStatsRepository, mateParticipantRepository, objectMapper);
         postService = new PostService(
                 postRepository, userClient, new PostAccessValidator(), objectMapper,
-                viewCountService, reactionRepository, postAssembler, userStatsService);
+                viewCountService, reactionRepository, feedForkRepository, postAssembler, userStatsService);
     }
 
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
@@ -209,6 +213,42 @@ class PostServiceTest {
         verify(viewCountService).registerView(1L, userId.toString());
         assertThat(response.author()).isEqualTo("최신닉네임");
         assertThat(response.myReaction()).isNull();
+        assertThat(response.myFork()).isNull();
+        verify(feedForkRepository, never()).existsByPostIdAndUserId(any(), any());
+    }
+
+    @Test
+    @DisplayName("피드 상세 조회 시 로그인 사용자가 가져갔으면 myFork가 true다")
+    void getFeedPostWithMyForkTrue() {
+        Post post = feedPost(userId);
+        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
+        when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
+        when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(true);
+
+        var response = postService.getPost(1L, userId, userId.toString());
+
+        assertThat(response.myFork()).isTrue();
+    }
+
+    @Test
+    @DisplayName("피드 상세 조회 시 가져가지 않았으면 myFork가 false, 비로그인이면 null이다")
+    void getFeedPostWithMyForkFalseOrNull() {
+        Post post = feedPost(userId);
+        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
+        when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(false);
+
+        var authenticated = postService.getPost(1L, userId, userId.toString());
+        assertThat(authenticated.myFork()).isFalse();
+
+        var anonymous = postService.getPost(1L, null, "127.0.0.1");
+        assertThat(anonymous.myFork()).isNull();
+        verify(feedForkRepository).existsByPostIdAndUserId(1L, userId);
     }
 
     @Test
@@ -394,6 +434,21 @@ class PostServiceTest {
                 .title("제목")
                 .content("{}")
                 .contentText("본문")
+                .build();
+        ReflectionTestUtils.setField(post, "postId", 1L);
+        return post;
+    }
+
+    private Post feedPost(UUID authorId) {
+        Post post = Post.builder()
+                .category(Category.FEED)
+                .userId(authorId)
+                .authorNickname("작성자")
+                .title("서울 여행")
+                .content("{}")
+                .contentText("본문")
+                .region("서울")
+                .durationDays(3)
                 .build();
         ReflectionTestUtils.setField(post, "postId", 1L);
         return post;

@@ -83,6 +83,10 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     void addCommentCount(@Param("postId") Long postId, @Param("delta") int delta);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Post p SET p.forkCount = p.forkCount + :delta WHERE p.postId = :postId")
+    void addForkCount(@Param("postId") Long postId, @Param("delta") int delta);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Post p SET p.viewCount = p.viewCount + 1 WHERE p.postId = :postId")
     void incrementViewCount(@Param("postId") Long postId);
 
