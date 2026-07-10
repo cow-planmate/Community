@@ -1,0 +1,40 @@
+# planmatetest(docker53, 192.168.0.53) — Backend-v2 스택 옆에 커뮤니티만 추가 기동.
+# 기존 planmate-v2 스택은 건드리지 않고, 같은 네트워크(planmate-v2_default)에 붙여
+# planmate-postgres / planmate-redis / planmate-app 를 컨테이너명으로 참조한다.
+#
+# 실행:  docker compose --env-file /opt/planmate-v2/.env -f docker-compose.community.yml up -d
+#   (--env-file 로 POSTGRES_USER/PASSWORD/JWT_SECRET/CORS_ALLOWED_ORIGINS 를 v2 .env에서 그대로 가져옴 → 시크릿 공유)
+#
+# CI/CD: main push → GitHub Actions 가 cycle123/planmate-community:latest 를 Docker Hub 에 push,
+#        docker53 의 Watchtower(WATCHTOWER_LABEL_ENABLE) 가 아래 라벨을 보고 자동 pull+재기동.
+# 전제: planmate-postgres 안에 'community' DB가 존재해야 함 (Flyway가 테이블/pg_trgm 생성).
+services:
+  community:
+    image: cycle123/planmate-community:latest
+    container_name: planmate-community
+    restart: unless-stopped
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+    environment:
+      SERVER_PORT: "8081"
+      SPRING_DATASOURCE_URL: jdbc:postgresql://planmate-postgres:5432/community
+      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
+      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATA_REDIS_HOST: planmate-redis
+      SPRING_DATA_REDIS_PORT: "6379"
+      # JWT: v2 페어링 (raw UTF-8). v2 .env의 JWT_SECRET 그대로 공유
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_SECRET_ENCODING: raw
+      # 내부 유저 API: v2에 아직 미포팅 → 닉네임 최신화는 실패해도 스냅샷으로 읽기 동작(코드 무수정 방침)
+      MAIN_BACKEND_URL: http://planmate-app:8080
+      INTERNAL_API_TOKEN: local-internal-token
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # MINIO: 이 호스트에 없음 → 이미지 업로드만 비활성(기동엔 지장 없음). 필요시 채우기.
+    ports:
+      - "8081:8081"
+    networks:
+      - planmate-v2_default
+
+networks:
+  planmate-v2_default:
+    external: true
