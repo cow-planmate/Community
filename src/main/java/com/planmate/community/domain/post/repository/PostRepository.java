@@ -19,8 +19,8 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     @Query("""
             SELECT p FROM Post p
             WHERE p.category = :category
-              AND (lower(p.title) LIKE lower(concat('%', :q, '%'))
-                OR lower(p.contentText) LIKE lower(concat('%', :q, '%')))
+              AND (p.title ilike concat('%', :q, '%')
+                OR p.contentText ilike concat('%', :q, '%'))
             """)
     Page<Post> searchByCategory(@Param("category") Category category, @Param("q") String q, Pageable pageable);
 
@@ -34,8 +34,8 @@ public interface PostRepository extends JpaRepository<Post, Long> {
               AND (:maxDays IS NULL OR p.durationDays <= :maxDays)
               AND (:tag IS NULL OR function('jsonb_exists', p.tags, cast(:tag as string)) = TRUE)
               AND (:q IS NULL
-                OR lower(p.title) LIKE lower(concat('%', cast(:q as string), '%'))
-                OR lower(p.contentText) LIKE lower(concat('%', cast(:q as string), '%')))
+                OR p.title ilike concat('%', cast(:q as string), '%')
+                OR p.contentText ilike concat('%', cast(:q as string), '%'))
             """)
     Page<Post> findFeedPosts(@Param("category") Category category,
                              @Param("region") String region,
@@ -87,8 +87,8 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     void addForkCount(@Param("postId") Long postId, @Param("delta") int delta);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Post p SET p.viewCount = p.viewCount + 1 WHERE p.postId = :postId")
-    void incrementViewCount(@Param("postId") Long postId);
+    @Query("UPDATE Post p SET p.viewCount = p.viewCount + :delta WHERE p.postId = :postId")
+    void addViewCount(@Param("postId") Long postId, @Param("delta") long delta);
 
     interface RegionCount {
         String getRegion();

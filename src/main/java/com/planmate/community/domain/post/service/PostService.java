@@ -118,19 +118,15 @@ public class PostService {
     }
 
     /**
-     * 상세 조회 — 조회수 증가(조회자별 24h 중복 방지) 후 최신 상태를 반환한다.
+     * 상세 조회 — 조회수 증가(조회자별 24h 중복 방지, Redis 버퍼링으로 응답의 조회수는 최대 flush 주기만큼 지연될 수 있다).
      *
      * @param viewerId  로그인 사용자 id (비로그인 null)
      * @param viewerKey 조회수 중복 방지 키 (로그인: userId, 비로그인: 원격 IP)
      */
     @Transactional
     public PostDetailResponse getPost(Long postId, UUID viewerId, String viewerKey) {
-        if (!postRepository.existsById(postId)) {
-            throw new CommunityException(ErrorCode.POST_NOT_FOUND);
-        }
-        viewCountService.registerView(postId, viewerKey);
-
         Post post = findPost(postId);
+        viewCountService.registerView(postId, viewerKey);
         return postAssembler.toDetail(post, findMyReaction(postId, viewerId), findMyFork(post, viewerId));
     }
 

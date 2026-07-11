@@ -190,7 +190,7 @@ class PostServiceTest {
     @Test
     @DisplayName("존재하지 않는 게시글 조회 시 POST_NOT_FOUND 예외가 발생한다")
     void getPostNotFound() {
-        when(postRepository.existsById(99L)).thenReturn(false);
+        when(postRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> postService.getPost(99L, null, "127.0.0.1"))
                 .isInstanceOf(CommunityException.class)
@@ -202,7 +202,6 @@ class PostServiceTest {
     @DisplayName("상세 조회 시 조회수 등록과 myReaction 조회가 수행된다")
     void getPostRegistersViewAndMyReaction() {
         Post post = freePost(userId);
-        when(postRepository.existsById(1L)).thenReturn(true);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getNickname(userId)).thenReturn(Optional.of("최신닉네임"));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
@@ -221,7 +220,6 @@ class PostServiceTest {
     @DisplayName("피드 상세 조회 시 로그인 사용자가 가져갔으면 myFork가 true다")
     void getFeedPostWithMyForkTrue() {
         Post post = feedPost(userId);
-        when(postRepository.existsById(1L)).thenReturn(true);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
@@ -237,7 +235,6 @@ class PostServiceTest {
     @DisplayName("피드 상세 조회 시 가져가지 않았으면 myFork가 false, 비로그인이면 null이다")
     void getFeedPostWithMyForkFalseOrNull() {
         Post post = feedPost(userId);
-        when(postRepository.existsById(1L)).thenReturn(true);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
