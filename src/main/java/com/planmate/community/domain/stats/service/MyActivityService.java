@@ -19,7 +19,9 @@ import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -50,8 +52,15 @@ public class MyActivityService {
         String freshNickname = userClient.getNickname(userId).orElse(null);
         int level = userStatsRepository.findById(userId).map(UserStats::getLevel).orElse(1);
 
+        // 목록에서 원문 제목 노출 + 원문으로 이동해야 하므로 한 번에 조회한다 (N+1 방지)
+        Map<Long, Post> postsById = postRepository.findAllById(
+                        comments.getContent().stream().map(Comment::getPostId).distinct().toList())
+                .stream()
+                .collect(Collectors.toMap(Post::getPostId, post -> post));
+
         return PageResponse.of(comments, comments.getContent().stream()
-                .map(comment -> CommentResponse.of(comment, freshNickname, level))
+                .map(comment -> CommentResponse.of(
+                        comment, freshNickname, level, postsById.get(comment.getPostId())))
                 .toList());
     }
 
