@@ -11,7 +11,7 @@ spring:
     time-zone: Asia/Seoul
 
   datasource:
-    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5433/community}
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/community}
     username: ${SPRING_DATASOURCE_USERNAME:postgres}
     password: ${SPRING_DATASOURCE_PASSWORD:1234}
     driver-class-name: org.postgresql.Driver
