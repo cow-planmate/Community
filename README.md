@@ -40,7 +40,9 @@ GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <a
 ## 로컬 실행
 
 ```bash
-docker compose up -d          # postgres:15 (호스트 5433, db community)
+# DB는 공용 postgres 인스턴스(호스트 5432)의 community DB를 사용한다.
+# 이 저장소의 docker-compose.yml은 5433에 별도 인스턴스를 띄우던 이전 구성으로,
+# 더 이상 쓰지 않는다.
 # redis는 로컬 6379 재사용 (없어도 기동됨 — dedupe/캐시만 비활성)
 
 JWT_SECRET=<레거시 jwt.access-secret 값> JWT_SECRET_ENCODING=base64 \
