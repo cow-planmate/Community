@@ -8,6 +8,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -27,5 +28,12 @@ public class ImageController {
     public ResponseEntity<ImageUploadResponse> upload(@RequestParam("file") MultipartFile file) {
         String url = imageService.upload(file);
         return ResponseEntity.status(HttpStatus.CREATED).body(new ImageUploadResponse(url));
+    }
+
+    @Operation(summary = "이미지 삭제", description = "업로드된 이미지를 삭제합니다. (등록 실패 시 방금 올린 이미지 정리용)")
+    @DeleteMapping
+    public ResponseEntity<Void> delete(@RequestParam("url") String url) {
+        imageService.deleteByUrl(url);
+        return ResponseEntity.noContent().build();
     }
 }

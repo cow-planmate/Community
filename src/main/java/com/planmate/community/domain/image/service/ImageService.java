@@ -1,11 +1,14 @@
 package com.planmate.community.domain.image.service;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
 import io.minio.MinioClient;
 import io.minio.PutObjectArgs;
+import io.minio.RemoveObjectArgs;
 import io.minio.SetBucketPolicyArgs;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
@@ -16,6 +19,8 @@ import org.springframework.web.multipart.MultipartFile;
 import java.io.InputStream;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.Collection;
+import java.util.HashSet;
 import java.util.Set;
 import java.util.UUID;
 
@@ -27,15 +32,18 @@ public class ImageService {
             "image/jpeg", "image/png", "image/gif", "image/webp");
 
     private final MinioClient minioClient;
+    private final ObjectMapper objectMapper;
     private final String bucket;
     private final String publicUrl;
 
     public ImageService(
             MinioClient minioClient,
+            ObjectMapper objectMapper,
             @Value("${minio.bucket}") String bucket,
             @Value("${minio.public-url}") String publicUrl
     ) {
         this.minioClient = minioClient;
+        this.objectMapper = objectMapper;
         this.bucket = bucket;
         this.publicUrl = publicUrl;
     }
@@ -92,6 +100,77 @@ public class ImageService {
         }
 
         return publicUrl + "/" + bucket + "/" + objectKey;
+    }
+
+    /** URL 하나에 해당하는 MinIO 객체를 삭제한다. 우리 버킷 URL이 아니거나 실패해도 예외를 던지지 않는다(best-effort). */
+    public void deleteByUrl(String url) {
+        String objectKey = extractObjectKey(url);
+        if (objectKey == null) {
+            return;
+        }
+        try {
+            minioClient.removeObject(RemoveObjectArgs.builder().bucket(bucket).object(objectKey).build());
+        } catch (Exception e) {
+            log.warn("이미지 삭제 실패 (key={}): {}", objectKey, e.getMessage());
+        }
+    }
+
+    /** 여러 이미지 URL을 모두 삭제한다(best-effort). */
+    public void deleteAll(Collection<String> urls) {
+        if (urls == null) {
+            return;
+        }
+        urls.forEach(this::deleteByUrl);
+    }
+
+    /** 게시글 본문(BlockNote JSON)과 썸네일에서 우리 이미지 URL을 찾아 모두 삭제한다. */
+    public void deletePostImages(String contentJson, String thumbnailUrl) {
+        Set<String> urls = extractImageUrls(contentJson);
+        if (thumbnailUrl != null) {
+            urls.add(thumbnailUrl);
+        }
+        deleteAll(urls);
+    }
+
+    /** 본문(BlockNote JSON)에 포함된 이미지 블록들의 URL 집합을 추출한다. */
+    public Set<String> extractImageUrls(String contentJson) {
+        Set<String> urls = new HashSet<>();
+        if (contentJson == null || contentJson.isBlank()) {
+            return urls;
+        }
+        try {
+            collectImageUrls(objectMapper.readTree(contentJson), urls);
+        } catch (Exception e) {
+            log.warn("본문 이미지 URL 추출 실패: {}", e.getMessage());
+        }
+        return urls;
+    }
+
+    private void collectImageUrls(JsonNode node, Set<String> urls) {
+        if (node == null) {
+            return;
+        }
+        if (node.isArray()) {
+            node.forEach(child -> collectImageUrls(child, urls));
+            return;
+        }
+        if (node.isObject()) {
+            JsonNode type = node.get("type");
+            JsonNode props = node.get("props");
+            if (type != null && "image".equals(type.asText()) && props != null && props.hasNonNull("url")) {
+                urls.add(props.get("url").asText());
+            }
+            collectImageUrls(node.get("children"), urls);
+        }
+    }
+
+    // 공개 URL(publicUrl/bucket/objectKey)에서 objectKey를 뽑는다. 우리 버킷 URL이 아니면 null.
+    private String extractObjectKey(String url) {
+        if (url == null) {
+            return null;
+        }
+        String prefix = publicUrl + "/" + bucket + "/";
+        return url.startsWith(prefix) ? url.substring(prefix.length()) : null;
     }
 
     private String buildObjectKey(String originalFilename) {
