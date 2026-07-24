@@ -86,12 +86,15 @@ public class PostService {
     }
 
     public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q,
-                                                      String region, Integer minDays, Integer maxDays, String tag) {
+                                                      String region, Integer minDays, Integer maxDays, String tag, UUID userId) {
         Category category = Category.from(categoryValue);
         SortType sortType = SortType.from(sortValue);
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE), sortType.toSort());
 
-        Page<Post> posts = findPostsPage(category, normalizeBlank(q), normalizeBlank(region), minDays, maxDays, normalizeBlank(tag), pageable);
+        // 특정 사용자의 글만 (프로필 페이지) — 다른 필터와 조합하지 않는다
+        Page<Post> posts = userId != null
+                ? postRepository.findByCategoryAndUserId(category, userId, pageable)
+                : findPostsPage(category, normalizeBlank(q), normalizeBlank(region), minDays, maxDays, normalizeBlank(tag), pageable);
         return PageResponse.of(posts, postAssembler.toSummaries(posts.getContent()));
     }
 

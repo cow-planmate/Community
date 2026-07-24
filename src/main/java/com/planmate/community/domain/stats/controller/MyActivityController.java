@@ -25,26 +25,39 @@ public class MyActivityController {
 
     private final MyActivityService myActivityService;
 
-    @Operation(summary = "내가 쓴 글", description = "내가 작성한 게시글을 최신순으로 조회합니다.")
+    @Operation(summary = "내가 쓴 글", description = "내가 작성한 게시글을 최신순으로 조회합니다. category를 주면 해당 게시판만 조회합니다.")
     @GetMapping("/posts")
     public ResponseEntity<PageResponse<PostSummaryResponse>> getMyPosts(
             Authentication authentication,
+            @RequestParam(value = "category", required = false) String category,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size
     ) {
         UUID userId = UUID.fromString(authentication.getName());
-        return ResponseEntity.ok(myActivityService.getMyPosts(userId, page, size));
+        return ResponseEntity.ok(myActivityService.getMyPosts(userId, category, page, size));
     }
 
-    @Operation(summary = "내가 좋아요한 글", description = "내가 좋아요를 누른 게시글을 최신순으로 조회합니다.")
+    @Operation(summary = "내가 좋아요한 글", description = "내가 좋아요를 누른 게시글을 최신순으로 조회합니다. category를 주면 해당 게시판만 조회합니다.")
     @GetMapping("/liked")
     public ResponseEntity<PageResponse<PostSummaryResponse>> getLikedPosts(
+            Authentication authentication,
+            @RequestParam(value = "category", required = false) String category,
+            @RequestParam(value = "page", defaultValue = "0") int page,
+            @RequestParam(value = "size", defaultValue = "20") int size
+    ) {
+        UUID userId = UUID.fromString(authentication.getName());
+        return ResponseEntity.ok(myActivityService.getLikedPosts(userId, category, page, size));
+    }
+
+    @Operation(summary = "내가 가져온 여행", description = "내가 가져가기(포크)한 피드 게시글을 가져간 시각 최신순으로 조회합니다.")
+    @GetMapping("/forks")
+    public ResponseEntity<PageResponse<PostSummaryResponse>> getForkedPosts(
             Authentication authentication,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size
     ) {
         UUID userId = UUID.fromString(authentication.getName());
-        return ResponseEntity.ok(myActivityService.getLikedPosts(userId, page, size));
+        return ResponseEntity.ok(myActivityService.getForkedPosts(userId, page, size));
     }
 
     @Operation(summary = "내가 쓴 댓글", description = "내가 작성한 댓글을 최신순으로 조회합니다.")

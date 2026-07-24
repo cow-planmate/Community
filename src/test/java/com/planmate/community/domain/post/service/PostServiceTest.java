@@ -258,10 +258,10 @@ class PostServiceTest {
         when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("free", 0, 20, "latest", null, null, null, null, null);
+        postService.getPosts("free", 0, 20, "latest", null, null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FREE), any(Pageable.class));
 
-        postService.getPosts("free", 0, 20, "latest", "맛집", null, null, null, null);
+        postService.getPosts("free", 0, 20, "latest", "맛집", null, null, null, null, null);
         verify(postRepository).searchByCategory(eq(Category.FREE), eq("맛집"), any(Pageable.class));
     }
 
@@ -393,11 +393,11 @@ class PostServiceTest {
         when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null);
+        postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FEED), any(Pageable.class));
         verify(postRepository, never()).findFeedPosts(any(), any(), any(), any(), any(), any(), any());
 
-        postService.getPosts("feed", 0, 20, "forks", null, "서울", 2, 3, "#극한의J");
+        postService.getPosts("feed", 0, 20, "forks", null, "서울", 2, 3, "#극한의J", null);
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(postRepository).findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getSort().getOrderFor("forkCount")).isNotNull();
