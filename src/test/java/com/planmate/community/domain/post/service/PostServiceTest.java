@@ -37,6 +37,8 @@ import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import com.planmate.community.domain.image.service.ImageService;
+
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
@@ -74,6 +76,9 @@ class PostServiceTest {
     @Mock
     private UserStatsService userStatsService;
 
+    @Mock
+    private ImageService imageService;
+
     private PostService postService;
 
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -85,7 +90,7 @@ class PostServiceTest {
                 userClient, userStatsRepository, mateParticipantRepository, objectMapper);
         postService = new PostService(
                 postRepository, userClient, new PostAccessValidator(), objectMapper,
-                viewCountService, reactionRepository, feedForkRepository, postAssembler, userStatsService);
+                viewCountService, reactionRepository, feedForkRepository, postAssembler, userStatsService, imageService);
     }
 
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {

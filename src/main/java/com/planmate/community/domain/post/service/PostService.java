@@ -8,6 +8,7 @@ import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.fork.repository.FeedForkRepository;
+import com.planmate.community.domain.image.service.ImageService;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
@@ -30,6 +31,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -48,6 +50,7 @@ public class PostService {
     private final FeedForkRepository feedForkRepository;
     private final PostAssembler postAssembler;
     private final UserStatsService userStatsService;
+    private final ImageService imageService;
 
     @Transactional
     public PostDetailResponse createPost(UUID userId, PostCreateRequest request) {
@@ -138,12 +141,20 @@ public class PostService {
         Post post = findPost(postId);
         postAccessValidator.validateAuthor(post, userId);
 
+        // 수정 전 이미지 URL을 기록해 두었다가, 수정 후 더 이상 참조되지 않는 이미지를 정리한다
+        Set<String> previousImageUrls = imageService.extractImageUrls(post.getContent());
+
         post.update(
                 request.title(),
                 request.content() != null ? writeContent(request.content()) : null,
                 request.contentText(),
                 request.thumbnailUrl()
         );
+
+        if (request.content() != null) {
+            previousImageUrls.removeAll(imageService.extractImageUrls(post.getContent()));
+            imageService.deleteAll(previousImageUrls);
+        }
         if (post.getCategory() == Category.RECOMMEND) {
             if (request.rating() != null) {
                 validateRating(request.rating());
@@ -177,6 +188,8 @@ public class PostService {
         postAccessValidator.validateAuthorOrAdmin(post, userId, isAdmin);
         post.softDelete();
         userStatsService.recordPostDeleted(post.getUserId());
+        // 삭제된 글의 본문/썸네일 이미지를 MinIO에서 정리한다 (고아 방지, best-effort)
+        imageService.deletePostImages(post.getContent(), post.getThumbnailUrl());
     }
 
     private Post findPost(Long postId) {
