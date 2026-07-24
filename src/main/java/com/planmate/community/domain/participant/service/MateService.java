@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -28,7 +29,8 @@ public class MateService {
      */
     @Transactional
     public MateParticipationResponse join(UUID userId, Long postId) {
-        Post post = findMatePost(postId);
+        // 게시글 행을 잠그고 검사 → 저장을 직렬화해 동시 참여로 정원이 초과되는 경합을 방지
+        Post post = findMatePostForUpdate(postId);
 
         if (post.getStatus() == MateStatus.CLOSED) {
             throw new CommunityException(ErrorCode.MATE_CLOSED);
@@ -61,9 +63,12 @@ public class MateService {
 
         MateParticipant participant = mateParticipantRepository.findByPostIdAndUserId(postId, userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.MATE_NOT_JOINED));
+
+        // 삭제 전 인원을 세고 -1 (delete 후 count 는 auto-flush 여부에 따라 값이 흔들릴 수 있음)
+        long remaining = mateParticipantRepository.countByPostId(postId) - 1;
         mateParticipantRepository.delete(participant);
 
-        return buildResponse(post, mateParticipantRepository.countByPostId(postId) - 1);
+        return buildResponse(post, remaining);
     }
 
     /**
@@ -88,8 +93,16 @@ public class MateService {
     }
 
     private Post findMatePost(Long postId) {
-        Post post = postRepository.findById(postId)
-                .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
+        return requireMate(postRepository.findById(postId));
+    }
+
+    // 참여 처리용 — 게시글 행에 쓰기 락을 걸어 로드
+    private Post findMatePostForUpdate(Long postId) {
+        return requireMate(postRepository.findByIdForUpdate(postId));
+    }
+
+    private Post requireMate(Optional<Post> found) {
+        Post post = found.orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
         if (post.getCategory() != Category.MATE) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "메이트 게시판 게시글이 아닙니다.");
         }

@@ -73,7 +73,8 @@ public class CommentService {
         List<CommentResponse> items = comments.getContent().stream()
                 .map(comment -> CommentResponse.of(
                         comment,
-                        freshNicknames.get(comment.getUserId()),
+                        // 최신 닉네임 조회 실패 시 댓글에 저장된 닉네임 스냅샷으로 fallback
+                        resolveNickname(freshNicknames.get(comment.getUserId()), comment.getAuthorNickname()),
                         levels.getOrDefault(comment.getUserId(), 1)))
                 .toList();
 
@@ -88,8 +89,13 @@ public class CommentService {
         }
         comment.updateContent(request.content());
 
-        String freshNickname = userClient.getNickname(comment.getUserId()).orElse(null);
+        String freshNickname = userClient.getNickname(comment.getUserId()).orElse(comment.getAuthorNickname());
         return CommentResponse.of(comment, freshNickname, findLevel(comment.getUserId()));
+    }
+
+    // 최신 닉네임 조회 실패 시 댓글에 저장된 닉네임 스냅샷으로 fallback
+    private String resolveNickname(String fresh, String stored) {
+        return fresh != null ? fresh : stored;
     }
 
     @Transactional
