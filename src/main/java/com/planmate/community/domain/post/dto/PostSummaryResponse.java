@@ -41,7 +41,10 @@ public record PostSummaryResponse(
         Integer durationDays,
         Integer forks,
         List<String> tags,
-        String description
+        String description,
+
+        // 내 활동 목록 전용 — 좋아요/가져가기를 한 시각 (그 외 목록에서는 null로 생략)
+        LocalDateTime actedAt
 ) {
 
     private static final int DESCRIPTION_PREVIEW_LENGTH = 200;
@@ -74,7 +77,16 @@ public record PostSummaryResponse(
                 post.getDurationDays(),
                 post.getCategory() == Category.FEED ? post.getForkCount() : null,
                 tags,
-                post.getCategory() == Category.FEED ? previewOf(post.getContentText()) : null
+                post.getCategory() == Category.FEED ? previewOf(post.getContentText()) : null,
+                null
+        );
+    }
+
+    public PostSummaryResponse withActedAt(LocalDateTime actedAt) {
+        return new PostSummaryResponse(
+                id, userId, category, title, author, level, likes, dislikes, comments, views, createdAt, image,
+                isAnswered, participants, maxParticipants, status, region, location, rating, coords,
+                durationDays, forks, tags, description, actedAt
         );
     }
 

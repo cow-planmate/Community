@@ -37,7 +37,7 @@ public class PostController {
 
     private final PostService postService;
 
-    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다.")
+    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다. userId를 주면 해당 사용자가 쓴 글만 조회합니다(프로필용, 다른 필터와 조합 불가).")
     @GetMapping
     public ResponseEntity<PageResponse<PostSummaryResponse>> getPosts(
             @RequestParam("category") String category,
@@ -48,9 +48,10 @@ public class PostController {
             @RequestParam(value = "region", required = false) String region,
             @RequestParam(value = "minDays", required = false) Integer minDays,
             @RequestParam(value = "maxDays", required = false) Integer maxDays,
-            @RequestParam(value = "tag", required = false) String tag
+            @RequestParam(value = "tag", required = false) String tag,
+            @RequestParam(value = "userId", required = false) UUID userId
     ) {
-        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q, region, minDays, maxDays, tag));
+        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q, region, minDays, maxDays, tag, userId));
     }
 
     @Operation(summary = "지역별 게시글 수 집계", description = "카테고리 내 지역(region)별 게시글 수를 집계합니다.")
