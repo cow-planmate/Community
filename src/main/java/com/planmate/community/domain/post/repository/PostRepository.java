@@ -2,19 +2,27 @@ package com.planmate.community.domain.post.repository;
 
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 public interface PostRepository extends JpaRepository<Post, Long> {
 
     Page<Post> findByCategory(Category category, Pageable pageable);
+
+    // MATE 참여 등 "정원 검사 → 저장"의 원자성을 위해 게시글 행을 잠근다 (동시 참여 직렬화)
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("SELECT p FROM Post p WHERE p.postId = :postId")
+    Optional<Post> findByIdForUpdate(@Param("postId") Long postId);
 
     @Query("""
             SELECT p FROM Post p

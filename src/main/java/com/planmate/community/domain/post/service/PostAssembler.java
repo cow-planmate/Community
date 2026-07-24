@@ -43,15 +43,20 @@ public class PostAssembler {
         return posts.stream()
                 .map(post -> PostSummaryResponse.of(
                         post,
-                        freshNicknames.get(post.getUserId()),
+                        resolveNickname(freshNicknames.get(post.getUserId()), post.getAuthorNickname()),
                         levels.getOrDefault(post.getUserId(), 1),
                         participantsFor(post, participantCounts),
                         readTags(post)))
                 .toList();
     }
 
+    // 최신 닉네임 조회 실패(사용자 서비스 장애 등) 시 게시글에 저장된 닉네임 스냅샷으로 fallback
+    private String resolveNickname(String fresh, String stored) {
+        return fresh != null ? fresh : stored;
+    }
+
     public PostDetailResponse toDetail(Post post, String myReaction, Boolean myFork) {
-        String freshNickname = userClient.getNickname(post.getUserId()).orElse(null);
+        String freshNickname = userClient.getNickname(post.getUserId()).orElse(post.getAuthorNickname());
         int level = userStatsRepository.findById(post.getUserId()).map(UserStats::getLevel).orElse(1);
         Integer participants = post.getCategory() == Category.MATE
                 ? (int) mateParticipantRepository.countByPostId(post.getPostId())
