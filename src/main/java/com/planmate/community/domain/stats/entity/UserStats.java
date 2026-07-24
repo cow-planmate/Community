@@ -3,6 +3,8 @@ package com.planmate.community.domain.stats.entity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
+import jakarta.persistence.PrePersist;
+import jakarta.persistence.PreUpdate;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -43,4 +45,12 @@ public class UserStats {
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
+
+    // 카운트/레벨은 네이티브 upsert(now())로 갱신되지만, 혹시 JPA 저장 경로를 타더라도
+    // updated_at NOT NULL 위반이 나지 않도록 방어적으로 채운다.
+    @PrePersist
+    @PreUpdate
+    void touch() {
+        this.updatedAt = LocalDateTime.now();
+    }
 }

@@ -61,7 +61,7 @@ class MateServiceTest {
     @DisplayName("참여 성공 시 참여자가 저장되고, 정원이 차면 자동 마감된다")
     void joinAndAutoClose() {
         Post post = matePost(2, MateStatus.RECRUITING);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
         when(mateParticipantRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
         when(mateParticipantRepository.countByPostId(1L)).thenReturn(1L);
 
@@ -77,7 +77,7 @@ class MateServiceTest {
     @DisplayName("이미 참여한 모집에는 다시 참여할 수 없다")
     void joinTwice() {
         Post post = matePost(4, MateStatus.RECRUITING);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
         when(mateParticipantRepository.findByPostIdAndUserId(1L, userId))
                 .thenReturn(Optional.of(MateParticipant.builder().postId(1L).userId(userId).build()));
 
@@ -90,7 +90,7 @@ class MateServiceTest {
     @DisplayName("정원이 가득 찬 모집에는 참여할 수 없다")
     void joinFull() {
         Post post = matePost(2, MateStatus.RECRUITING);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
         when(mateParticipantRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
         when(mateParticipantRepository.countByPostId(1L)).thenReturn(2L);
 
@@ -104,7 +104,7 @@ class MateServiceTest {
     @DisplayName("마감된 모집에는 참여할 수 없다")
     void joinClosed() {
         Post post = matePost(4, MateStatus.CLOSED);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
 
         assertThatThrownBy(() -> mateService.join(userId, 1L))
                 .isInstanceOf(CommunityException.class)
@@ -118,7 +118,7 @@ class MateServiceTest {
                 .category(Category.FREE).userId(authorId).authorNickname("작성자")
                 .title("자유글").content("{}").contentText("본문").build();
         ReflectionTestUtils.setField(post, "postId", 1L);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        when(postRepository.findByIdForUpdate(1L)).thenReturn(Optional.of(post));
 
         assertThatThrownBy(() -> mateService.join(userId, 1L))
                 .isInstanceOf(CommunityException.class)
