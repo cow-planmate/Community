@@ -162,7 +162,7 @@ class PostServiceTest {
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         UUID otherUser = UUID.randomUUID();
-        PostUpdateRequest request = new PostUpdateRequest("새 제목", null, null, null, null, null, null, null, null, null);
+        PostUpdateRequest request = new PostUpdateRequest("새 제목", null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> postService.updatePost(otherUser, 1L, request))
                 .isInstanceOf(CommunityException.class)
@@ -197,10 +197,10 @@ class PostServiceTest {
     void getPostNotFound() {
         when(postRepository.findById(99L)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> postService.getPost(99L, null, "127.0.0.1"))
+        assertThatThrownBy(() -> postService.getPost(99L, null))
                 .isInstanceOf(CommunityException.class)
                 .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.POST_NOT_FOUND));
-        verify(viewCountService, never()).registerView(any(), anyString());
+        verify(viewCountService, never()).registerView(any());
     }
 
     @Test
@@ -212,9 +212,9 @@ class PostServiceTest {
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
 
-        var response = postService.getPost(1L, userId, userId.toString());
+        var response = postService.getPost(1L, userId);
 
-        verify(viewCountService).registerView(1L, userId.toString());
+        verify(viewCountService).registerView(1L);
         assertThat(response.author()).isEqualTo("최신닉네임");
         assertThat(response.myReaction()).isNull();
         assertThat(response.myFork()).isNull();
@@ -231,7 +231,7 @@ class PostServiceTest {
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
         when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(true);
 
-        var response = postService.getPost(1L, userId, userId.toString());
+        var response = postService.getPost(1L, userId);
 
         assertThat(response.myFork()).isTrue();
     }
@@ -245,12 +245,56 @@ class PostServiceTest {
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(false);
 
-        var authenticated = postService.getPost(1L, userId, userId.toString());
+        var authenticated = postService.getPost(1L, userId);
         assertThat(authenticated.myFork()).isFalse();
 
-        var anonymous = postService.getPost(1L, null, "127.0.0.1");
+        var anonymous = postService.getPost(1L, null);
         assertThat(anonymous.myFork()).isNull();
         verify(feedForkRepository).existsByPostIdAndUserId(1L, userId);
+    }
+
+    @Test
+    @DisplayName("작성자별 목록 조회 - 프로필이 비공개면 PROFILE_PRIVATE 예외가 발생하고 조회 자체를 하지 않는다")
+    void getPostsByUserIdBlockedWhenProfilePrivate() {
+        UUID authorId = UUID.randomUUID();
+        when(userClient.isProfilePublic(authorId)).thenReturn(false);
+
+        assertThatThrownBy(() -> postService.getPosts(
+                "feed", 0, 20, "latest", null, null, null, null, null, authorId, UUID.randomUUID()))
+                .isInstanceOf(CommunityException.class)
+                .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROFILE_PRIVATE);
+
+        verify(postRepository, never()).findByCategoryAndUserId(any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("작성자별 목록 조회 - 비공개 프로필이라도 본인이면 내부 API를 묻지 않고 그대로 조회한다")
+    void getPostsByUserIdAllowedForSelf() {
+        UUID authorId = UUID.randomUUID();
+        when(postRepository.findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userStatsRepository.findAllById(any())).thenReturn(List.of());
+
+        postService.getPosts("feed", 0, 20, "latest", null, null, null, null, null, authorId, authorId);
+
+        verify(postRepository).findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class));
+        verify(userClient, never()).isProfilePublic(any());
+    }
+
+    @Test
+    @DisplayName("작성자별 목록 조회 - 공개 프로필이면 비로그인 사용자도 조회할 수 있다")
+    void getPostsByUserIdAllowedWhenProfilePublic() {
+        UUID authorId = UUID.randomUUID();
+        when(userClient.isProfilePublic(authorId)).thenReturn(true);
+        when(postRepository.findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of()));
+        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userStatsRepository.findAllById(any())).thenReturn(List.of());
+
+        postService.getPosts("feed", 0, 20, "latest", null, null, null, null, null, authorId, null);
+
+        verify(postRepository).findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class));
     }
 
     @Test
@@ -263,10 +307,10 @@ class PostServiceTest {
         when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("free", 0, 20, "latest", null, null, null, null, null, null);
+        postService.getPosts("free", 0, 20, "latest", null, null, null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FREE), any(Pageable.class));
 
-        postService.getPosts("free", 0, 20, "latest", "맛집", null, null, null, null, null);
+        postService.getPosts("free", 0, 20, "latest", "맛집", null, null, null, null, null, null);
         verify(postRepository).searchByCategory(eq(Category.FREE), eq("맛집"), any(Pageable.class));
     }
 
@@ -398,11 +442,11 @@ class PostServiceTest {
         when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null, null);
+        postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FEED), any(Pageable.class));
         verify(postRepository, never()).findFeedPosts(any(), any(), any(), any(), any(), any(), any());
 
-        postService.getPosts("feed", 0, 20, "forks", null, "서울", 2, 3, "#극한의J", null);
+        postService.getPosts("feed", 0, 20, "forks", null, "서울", 2, 3, "#극한의J", null, null);
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(postRepository).findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getSort().getOrderFor("forkCount")).isNotNull();

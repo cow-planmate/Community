@@ -10,7 +10,6 @@ import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.service.PostService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -37,7 +36,7 @@ public class PostController {
 
     private final PostService postService;
 
-    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다. userId를 주면 해당 사용자가 쓴 글만 조회합니다(프로필용, 다른 필터와 조합 불가).")
+    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다. userId를 주면 해당 사용자가 쓴 글만 조회합니다(프로필용, 다른 필터와 조합 불가). 해당 사용자가 프로필을 비공개로 두면 본인 외에는 403(USER_002)입니다.")
     @GetMapping
     public ResponseEntity<PageResponse<PostSummaryResponse>> getPosts(
             @RequestParam("category") String category,
@@ -49,9 +48,11 @@ public class PostController {
             @RequestParam(value = "minDays", required = false) Integer minDays,
             @RequestParam(value = "maxDays", required = false) Integer maxDays,
             @RequestParam(value = "tag", required = false) String tag,
-            @RequestParam(value = "userId", required = false) UUID userId
+            @RequestParam(value = "userId", required = false) UUID userId,
+            Authentication authentication
     ) {
-        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q, region, minDays, maxDays, tag, userId));
+        UUID viewerId = viewerId(authentication);
+        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q, region, minDays, maxDays, tag, userId, viewerId));
     }
 
     @Operation(summary = "지역별 게시글 수 집계", description = "카테고리 내 지역(region)별 게시글 수를 집계합니다.")
@@ -66,16 +67,14 @@ public class PostController {
         return ResponseEntity.ok(postService.getHotPosts(category));
     }
 
-    @Operation(summary = "게시글 상세 조회", description = "게시글 상세 내용을 조회합니다. 조회수는 조회자별 24시간 1회 증가합니다.")
+    @Operation(summary = "게시글 상세 조회", description = "게시글 상세 내용을 조회합니다. 조회수는 조회 요청마다 증가합니다.")
     @GetMapping("/{postId}")
     public ResponseEntity<PostDetailResponse> getPost(
             @PathVariable("postId") Long postId,
-            Authentication authentication,
-            HttpServletRequest request
+            Authentication authentication
     ) {
-        UUID viewerId = authentication != null ? UUID.fromString(authentication.getName()) : null;
-        String viewerKey = viewerId != null ? viewerId.toString() : request.getRemoteAddr();
-        return ResponseEntity.ok(postService.getPost(postId, viewerId, viewerKey));
+        UUID viewerId = viewerId(authentication);
+        return ResponseEntity.ok(postService.getPost(postId, viewerId));
     }
 
     @Operation(summary = "게시글 작성", description = "게시판별 필드를 포함한 게시글을 작성합니다.")
@@ -122,5 +121,14 @@ public class PostController {
                 .anyMatch(auth -> "ROLE_ADMIN".equals(auth.getAuthority()));
         postService.deletePost(userId, isAdmin, postId);
         return ResponseEntity.noContent().build();
+    }
+
+    /**
+     * 비로그인도 허용되는 조회용 엔드포인트의 뷰어 id.
+     * 토큰이 없으면 Spring이 AnonymousAuthenticationToken(getName()="anonymousUser")을 채워 넣으므로
+     * null 검사만으로는 부족하다 — JwtAuthenticationFilter가 principal에 UUID를 넣는다는 점으로 판별한다.
+     */
+    private static UUID viewerId(Authentication authentication) {
+        return authentication != null && authentication.getPrincipal() instanceof UUID principal ? principal : null;
     }
 }
