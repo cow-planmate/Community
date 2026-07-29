@@ -8,50 +8,26 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.Duration;
 import java.util.Set;
 
 /**
- * 조회수 증가 — Redis SETNX로 조회자별 24시간 중복 방지.
+ * 조회수 증가 — 중복 제거 없이 조회 요청마다 1씩 증가한다.
  * 조회수는 Redis에 버퍼링 후 10초 주기로 DB 반영 (게시글별 INCR delta + dirty set).
- * Redis 장애 시 fail-open (조회수를 세는 쪽으로 동작, DB 직접 반영으로 fallback).
+ * Redis 장애 시 DB 직접 반영으로 fallback.
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class ViewCountService {
 
-    private static final String VIEW_KEY_PREFIX = "community:view:";
     private static final String DELTA_KEY_PREFIX = "community:view:delta:";
     private static final String DIRTY_SET_KEY = "community:view:dirty";
-    private static final Duration DEDUPE_TTL = Duration.ofHours(24);
 
     private final StringRedisTemplate redisTemplate;
     private final PostRepository postRepository;
 
-    /**
-     * @param viewerKey 로그인 사용자는 userId, 비로그인은 원격 IP
-     * @return 조회수가 실제로 증가했는지
-     */
-    public boolean registerView(Long postId, String viewerKey) {
-        boolean firstView;
-        try {
-            Boolean added = redisTemplate.opsForValue()
-                    .setIfAbsent(VIEW_KEY_PREFIX + postId + ":" + viewerKey, "1", DEDUPE_TTL);
-            firstView = Boolean.TRUE.equals(added);
-        } catch (Exception e) {
-            log.warn("조회수 중복방지 캐시 실패 (postId={}): {}", postId, e.getMessage());
-            firstView = true;
-        }
-
-        if (firstView) {
-            bufferView(postId);
-        }
-        return firstView;
-    }
-
     // Redis에 delta를 버퍼링하고, 실패 시 DB 직접 반영으로 fallback
-    private void bufferView(Long postId) {
+    public void registerView(Long postId) {
         try {
             redisTemplate.opsForValue().increment(DELTA_KEY_PREFIX + postId);
             redisTemplate.opsForSet().add(DIRTY_SET_KEY, String.valueOf(postId));

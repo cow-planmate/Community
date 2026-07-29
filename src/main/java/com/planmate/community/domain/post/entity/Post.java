@@ -169,4 +169,28 @@ public class Post extends BaseSoftDeleteEntity {
             this.maxParticipants = maxParticipants;
         }
     }
+
+    /**
+     * FEED 수정. itinerary/tags는 이미 직렬화된 JSON 문자열을 받는다.
+     * 일정·태그는 통째로 지울 수 있어야 하므로, 호출부가 "변경 없음"과 "비우기"를 구분해 전달한다.
+     */
+    public void updateFeedFields(String region, String location, Integer durationDays,
+                                 String itinerary, boolean itineraryChanged,
+                                 String tags, boolean tagsChanged) {
+        if (region != null && !region.isBlank()) {
+            this.region = region;
+        }
+        if (location != null && !location.isBlank()) {
+            this.location = location;
+        }
+        if (durationDays != null) {
+            this.durationDays = durationDays;
+        }
+        if (itineraryChanged) {
+            this.itinerary = itinerary;
+        }
+        if (tagsChanged) {
+            this.tags = tags;
+        }
+    }
 }

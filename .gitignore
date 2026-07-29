@@ -58,3 +58,5 @@ Thumbs.db
 
 # Firebase service account key
 *-firebase-adminsdk-*.json
+# 로컬 환경변수
+.env
