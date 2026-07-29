@@ -3,6 +3,7 @@ package com.planmate.community.domain.post.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.planmate.community.common.access.ProfileAccessValidator;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.common.exception.CommunityException;
@@ -47,6 +48,7 @@ public class PostService {
     private final PostRepository postRepository;
     private final UserClient userClient;
     private final PostAccessValidator postAccessValidator;
+    private final ProfileAccessValidator profileAccessValidator;
     private final ObjectMapper objectMapper;
     private final ViewCountService viewCountService;
     private final ReactionRepository reactionRepository;
@@ -103,8 +105,8 @@ public class PostService {
 
         // 작성자별 목록은 프로필의 일부다 — 비공개 프로필이면 본인 외에는 목록도 볼 수 없다.
         // (게시판 전체 목록에는 이 사용자의 글이 계속 보인다. 감추는 건 "누가 썼는지로 모아보는" 경로다)
-        if (userId != null && !userId.equals(viewerId) && !userClient.isProfilePublic(userId)) {
-            throw new CommunityException(ErrorCode.PROFILE_PRIVATE);
+        if (userId != null) {
+            profileAccessValidator.validateVisible(userId, viewerId);
         }
 
         // 특정 사용자의 글만 (프로필 페이지) — 다른 필터와 조합하지 않는다

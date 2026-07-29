@@ -3,6 +3,7 @@ package com.planmate.community.domain.post.service;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.planmate.community.common.access.ProfileAccessValidator;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
@@ -89,7 +90,8 @@ class PostServiceTest {
         PostAssembler postAssembler = new PostAssembler(
                 userClient, userStatsRepository, mateParticipantRepository, objectMapper);
         postService = new PostService(
-                postRepository, userClient, new PostAccessValidator(), objectMapper,
+                postRepository, userClient, new PostAccessValidator(),
+                new ProfileAccessValidator(userClient), objectMapper,
                 viewCountService, reactionRepository, feedForkRepository, postAssembler, userStatsService, imageService);
     }
 
