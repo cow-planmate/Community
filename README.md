@@ -45,10 +45,12 @@ GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <a
 # 더 이상 쓰지 않는다.
 # redis는 로컬 6379 재사용 (없어도 기동됨 — dedupe/캐시만 비활성)
 
-JWT_SECRET=<레거시 jwt.access-secret 값> JWT_SECRET_ENCODING=base64 \
-MAIN_BACKEND_URL=http://localhost:8080 \
-MINIO_ACCESS_KEY=... MINIO_SECRET_KEY=... \
+# JWT/MinIO/메인 백엔드 URL은 .env(gitignore)에 두면 bootRun이 자동 주입한다.
+# Backend-v2와 페어링할 때는 JWT_SECRET_ENCODING=raw, MAIN_BACKEND_URL=http://localhost:8090.
 ./gradlew bootRun             # :8081
+
+# 일회성 오버라이드
+./gradlew bootRun -Denv.MAIN_BACKEND_URL=http://localhost:8080
 ```
 
 프론트: `VITE_COMMUNITY_API_URL=http://localhost:8081 npm run dev`
