@@ -3,6 +3,7 @@ package com.planmate.community.domain.post.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.planmate.community.common.access.ProfileAccessValidator;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.common.exception.CommunityException;
@@ -28,8 +29,11 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 
 import java.math.BigDecimal;
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -44,6 +48,7 @@ public class PostService {
     private final PostRepository postRepository;
     private final UserClient userClient;
     private final PostAccessValidator postAccessValidator;
+    private final ProfileAccessValidator profileAccessValidator;
     private final ObjectMapper objectMapper;
     private final ViewCountService viewCountService;
     private final ReactionRepository reactionRepository;
@@ -88,11 +93,21 @@ public class PostService {
         return postAssembler.toDetail(saved, null, null);
     }
 
+    /**
+     * @param viewerId 로그인 사용자 id (비로그인 null) — 작성자별 목록의 공개 여부 판단에만 쓴다
+     */
     public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q,
-                                                      String region, Integer minDays, Integer maxDays, String tag, UUID userId) {
+                                                      String region, Integer minDays, Integer maxDays, String tag,
+                                                      UUID userId, UUID viewerId) {
         Category category = Category.from(categoryValue);
         SortType sortType = SortType.from(sortValue);
         Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE), sortType.toSort());
+
+        // 작성자별 목록은 프로필의 일부다 — 비공개 프로필이면 본인 외에는 목록도 볼 수 없다.
+        // (게시판 전체 목록에는 이 사용자의 글이 계속 보인다. 감추는 건 "누가 썼는지로 모아보는" 경로다)
+        if (userId != null) {
+            profileAccessValidator.validateVisible(userId, viewerId);
+        }
 
         // 특정 사용자의 글만 (프로필 페이지) — 다른 필터와 조합하지 않는다
         Page<Post> posts = userId != null
@@ -124,15 +139,14 @@ public class PostService {
     }
 
     /**
-     * 상세 조회 — 조회수 증가(조회자별 24h 중복 방지, Redis 버퍼링으로 응답의 조회수는 최대 flush 주기만큼 지연될 수 있다).
+     * 상세 조회 — 조회 요청마다 조회수 증가(Redis 버퍼링으로 응답의 조회수는 최대 flush 주기만큼 지연될 수 있다).
      *
-     * @param viewerId  로그인 사용자 id (비로그인 null)
-     * @param viewerKey 조회수 중복 방지 키 (로그인: userId, 비로그인: 원격 IP)
+     * @param viewerId 로그인 사용자 id (비로그인 null)
      */
     @Transactional
-    public PostDetailResponse getPost(Long postId, UUID viewerId, String viewerKey) {
+    public PostDetailResponse getPost(Long postId, UUID viewerId) {
         Post post = findPost(postId);
-        viewCountService.registerView(postId, viewerKey);
+        viewCountService.registerView(postId);
         return postAssembler.toDetail(post, findMyReaction(postId, viewerId), findMyFork(post, viewerId));
     }
 
@@ -141,8 +155,8 @@ public class PostService {
         Post post = findPost(postId);
         postAccessValidator.validateAuthor(post, userId);
 
-        // 수정 전 이미지 URL을 기록해 두었다가, 수정 후 더 이상 참조되지 않는 이미지를 정리한다
-        Set<String> previousImageUrls = imageService.extractImageUrls(post.getContent());
+        // 수정 전 이미지 URL(본문 + 커버)을 기록해 두었다가, 수정 후 더 이상 참조되지 않는 것만 정리한다
+        Set<String> previousImageUrls = collectImageUrls(post);
 
         post.update(
                 request.title(),
@@ -151,10 +165,6 @@ public class PostService {
                 request.thumbnailUrl()
         );
 
-        if (request.content() != null) {
-            previousImageUrls.removeAll(imageService.extractImageUrls(post.getContent()));
-            imageService.deleteAll(previousImageUrls);
-        }
         if (post.getCategory() == Category.RECOMMEND) {
             if (request.rating() != null) {
                 validateRating(request.rating());
@@ -164,8 +174,61 @@ public class PostService {
         if (post.getCategory() == Category.MATE) {
             post.updateMateFields(request.region(), request.maxParticipants());
         }
+        if (post.getCategory() == Category.FEED) {
+            if (request.durationDays() != null && request.durationDays() < 1) {
+                throw new CommunityException(ErrorCode.INVALID_INPUT, "피드 게시글은 1일 이상의 여행 기간이 필수입니다.");
+            }
+            validateItinerary(request.itinerary());
+            // itinerary/tags는 필드가 넘어온 경우에만 반영한다 (null 전달 = 비우기)
+            boolean itineraryChanged = request.itinerary() != null;
+            boolean tagsChanged = request.tags() != null;
+            post.updateFeedFields(
+                    request.region(),
+                    request.location(),
+                    request.durationDays(),
+                    itineraryChanged ? writeItinerary(request.itinerary()) : null,
+                    itineraryChanged,
+                    tagsChanged && !request.tags().isEmpty() ? writeJson(request.tags()) : null,
+                    tagsChanged
+            );
+        }
+
+        // 본문에서 빠진 이미지 + 교체된 커버 이미지를 MinIO에서 정리한다.
+        // 커버가 본문에도 쓰이는 경우(또는 그 반대)가 있으므로 양쪽을 합쳐 비교해야 살아있는 이미지를 지우지 않는다.
+        previousImageUrls.removeAll(collectImageUrls(post));
+        deleteImagesAfterCommit(previousImageUrls);
 
         return postAssembler.toDetail(post, findMyReaction(postId, userId), findMyFork(post, userId));
+    }
+
+    /** 게시글이 현재 참조하는 이미지 URL 집합 (본문 이미지 블록 + 커버). */
+    private Set<String> collectImageUrls(Post post) {
+        Set<String> urls = imageService.extractImageUrls(post.getContent());
+        if (post.getThumbnailUrl() != null) {
+            urls.add(post.getThumbnailUrl());
+        }
+        return urls;
+    }
+
+    /**
+     * 이미지 삭제는 커밋 이후로 미룬다 — 트랜잭션이 롤백되면 글은 그대로인데 이미지만 사라지는 상태를 막는다.
+     * 삭제 자체는 best-effort라 실패해도 트랜잭션 결과에 영향을 주지 않는다.
+     */
+    private void deleteImagesAfterCommit(Collection<String> urls) {
+        if (urls == null || urls.isEmpty()) {
+            return;
+        }
+        Set<String> targets = Set.copyOf(urls);
+        if (!TransactionSynchronizationManager.isSynchronizationActive()) {
+            imageService.deleteAll(targets);
+            return;
+        }
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                imageService.deleteAll(targets);
+            }
+        });
     }
 
     /**
@@ -189,7 +252,7 @@ public class PostService {
         post.softDelete();
         userStatsService.recordPostDeleted(post.getUserId());
         // 삭제된 글의 본문/썸네일 이미지를 MinIO에서 정리한다 (고아 방지, best-effort)
-        imageService.deletePostImages(post.getContent(), post.getThumbnailUrl());
+        deleteImagesAfterCommit(collectImageUrls(post));
     }
 
     private Post findPost(Long postId) {

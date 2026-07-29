@@ -33,7 +33,10 @@ import java.util.stream.Collectors;
 public class UserClient {
 
     private static final String CACHE_KEY_PREFIX = "community:user:nickname:";
+    private static final String VISIBILITY_CACHE_KEY_PREFIX = "community:user:profile-public:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
+    // 공개 설정을 껐을 때 반영이 10분이나 늦으면 안 되므로 닉네임보다 짧게 캐싱한다
+    private static final Duration VISIBILITY_CACHE_TTL = Duration.ofMinutes(1);
 
     private final RestClient restClient;
     private final StringRedisTemplate redisTemplate;
@@ -74,7 +77,8 @@ public class UserClient {
         }
 
         if (!cacheMisses.isEmpty()) {
-            Map<UUID, String> fetched = fetchFromInternalApi(cacheMisses);
+            Map<UUID, String> fetched = fetchUsers(cacheMisses).entrySet().stream()
+                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().nickname()));
             result.putAll(fetched);
             writeCache(fetched);
         }
@@ -82,7 +86,27 @@ public class UserClient {
         return result;
     }
 
-    private Map<UUID, String> fetchFromInternalApi(List<UUID> userIds) {
+    /**
+     * 프로필 공개 여부. 닉네임과 달리 조회에 실패하면 <b>비공개로 간주</b>한다 —
+     * 메인 백엔드가 잠시 응답하지 않는다고 비공개 프로필이 노출되면 안 된다.
+     */
+    public boolean isProfilePublic(UUID userId) {
+        String cached = readVisibilityCache(userId);
+        if (cached != null) {
+            return "1".equals(cached);
+        }
+
+        InternalUserResponse user = fetchUsers(List.of(userId)).get(userId);
+        if (user == null) {
+            // 조회 실패/사용자 없음 — 캐싱하지 않고(다음 요청에서 재시도) 비공개로 처리한다
+            return false;
+        }
+
+        writeVisibilityCache(userId, user.profilePublic());
+        return user.profilePublic();
+    }
+
+    private Map<UUID, InternalUserResponse> fetchUsers(List<UUID> userIds) {
         String ids = userIds.stream().map(UUID::toString).collect(Collectors.joining(","));
         try {
             List<InternalUserResponse> users = restClient.get()
@@ -95,10 +119,28 @@ public class UserClient {
                 return Map.of();
             }
             return users.stream()
-                    .collect(Collectors.toMap(InternalUserResponse::userId, InternalUserResponse::nickname));
+                    .collect(Collectors.toMap(InternalUserResponse::userId, user -> user));
         } catch (Exception e) {
             log.warn("내부 사용자 API 호출 실패 (ids={}): {}", ids, e.getMessage());
             return Map.of();
+        }
+    }
+
+    private String readVisibilityCache(UUID userId) {
+        try {
+            return redisTemplate.opsForValue().get(VISIBILITY_CACHE_KEY_PREFIX + userId);
+        } catch (Exception e) {
+            log.warn("프로필 공개 여부 캐시 조회 실패 (userId={}): {}", userId, e.getMessage());
+            return null;
+        }
+    }
+
+    private void writeVisibilityCache(UUID userId, boolean profilePublic) {
+        try {
+            redisTemplate.opsForValue()
+                    .set(VISIBILITY_CACHE_KEY_PREFIX + userId, profilePublic ? "1" : "0", VISIBILITY_CACHE_TTL);
+        } catch (Exception e) {
+            log.warn("프로필 공개 여부 캐시 저장 실패 (userId={}): {}", userId, e.getMessage());
         }
     }
 
@@ -138,6 +180,6 @@ public class UserClient {
         }
     }
 
-    private record InternalUserResponse(UUID userId, String nickname) {
+    private record InternalUserResponse(UUID userId, String nickname, boolean profilePublic) {
     }
 }
