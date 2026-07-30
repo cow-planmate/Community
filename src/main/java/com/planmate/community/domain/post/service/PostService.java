@@ -37,6 +37,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -44,6 +45,7 @@ import java.util.UUID;
 public class PostService {
 
     private static final int MAX_PAGE_SIZE = 50;
+    private static final Pattern HH_MM = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
 
     private final PostRepository postRepository;
     private final UserClient userClient;
@@ -311,10 +313,17 @@ public class PostService {
     }
 
     // itinerary 구조 검증 (선택 필드) — days는 비어있지 않은 배열, 각 항목에 time·place 필수
+    //
+    // itinerary는 "가져가기"로 다른 사용자의 플랜을 만들어내는 원본 스냅샷이다.
+    // 상위 plan 객체(destinationId 등)가 있어야 Backend-v2의 POST /api/plan/full로 복제할 수 있지만,
+    // 플랜 없이 손으로 쓴 여행기와 구 스키마 게시글도 허용해야 하므로 plan은 선택 필드로 둔다.
+    // (plan이 없는 글은 프론트에서 가져가기 버튼이 비활성화된다)
     private void validateItinerary(JsonNode itinerary) {
         if (itinerary == null || itinerary.isNull()) {
             return;
         }
+        validatePlanSnapshot(itinerary.get("plan"));
+
         JsonNode days = itinerary.get("days");
         if (days == null || !days.isArray() || days.isEmpty()) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "일정에는 비어있지 않은 days 배열이 필요합니다.");
@@ -331,7 +340,50 @@ public class PostService {
                 if (isBlankText(item.get("time")) || isBlankText(item.get("place"))) {
                     throw new CommunityException(ErrorCode.INVALID_INPUT, "일정 항목에는 time과 place가 필수입니다.");
                 }
+                validateItemTimeRange(item);
             }
+        }
+    }
+
+    private void validatePlanSnapshot(JsonNode plan) {
+        if (plan == null || plan.isNull()) {
+            return;
+        }
+        if (!plan.isObject()) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 plan은 객체여야 합니다.");
+        }
+        JsonNode destinationId = plan.get("destinationId");
+        if (destinationId == null || !destinationId.isIntegralNumber()) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 plan에는 destinationId가 필요합니다.");
+        }
+        if (isBlankText(plan.get("transportationType"))) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 plan에는 transportationType이 필요합니다.");
+        }
+        validateNonNegativeCount(plan.get("adultCount"), "adultCount");
+        validateNonNegativeCount(plan.get("childCount"), "childCount");
+    }
+
+    private void validateNonNegativeCount(JsonNode node, String field) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (!node.isIntegralNumber() || node.asInt() < 0) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 plan." + field + "은 0 이상의 정수여야 합니다.");
+        }
+    }
+
+    // endTime은 구 스키마에는 없으므로 선택이지만, 있으면 HH:mm 형식이고 time보다 이르면 안 된다
+    private void validateItemTimeRange(JsonNode item) {
+        JsonNode endTime = item.get("endTime");
+        if (endTime == null || endTime.isNull()) {
+            return;
+        }
+        if (isBlankText(endTime) || !HH_MM.matcher(endTime.asText()).matches()) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정 항목의 endTime은 HH:mm 형식이어야 합니다.");
+        }
+        String time = item.get("time").asText();
+        if (HH_MM.matcher(time).matches() && endTime.asText().compareTo(time) < 0) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정 항목의 endTime은 time보다 이를 수 없습니다.");
         }
     }
 

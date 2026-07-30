@@ -22,7 +22,8 @@ public class FeedForkController {
 
     private final FeedForkService feedForkService;
 
-    @Operation(summary = "일정 가져가기", description = "피드 일정을 가져갑니다(포크). 사용자당 게시글별 1회만 가능하며 취소할 수 없습니다.")
+    @Operation(summary = "일정 가져가기", description = "피드 일정을 가져갑니다(포크). 횟수 제한이 없으며 가져갈 때마다 카운트가 증가합니다. "
+            + "실제 여행 플랜 생성은 클라이언트가 Backend-v2의 POST /api/plan/full로 수행하고, 이 API는 성공 후 기록·카운트만 남깁니다.")
     @PostMapping("/fork")
     public ResponseEntity<ForkResponse> fork(
             Authentication authentication,

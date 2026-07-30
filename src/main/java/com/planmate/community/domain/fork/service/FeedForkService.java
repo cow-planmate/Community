@@ -3,16 +3,15 @@ package com.planmate.community.domain.fork.service;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.fork.dto.ForkResponse;
-import com.planmate.community.domain.fork.entity.FeedFork;
 import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
-import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Service
@@ -23,28 +22,17 @@ public class FeedForkService {
     private final PostRepository postRepository;
 
     /**
-     * 피드 일정 가져가기(포크) — 사용자당 게시글별 1회.
-     * 동시 요청 레이스는 UNIQUE 제약이 백스톱하며, 위반이 커밋 시점이 아닌
-     * try 안에서 감지되도록 반드시 saveAndFlush를 사용한다.
+     * 피드 일정 가져가기(포크) — 횟수 제한 없음.
+     * 가져갈 때마다 사용자의 여행에 새 플랜이 하나씩 생기므로 fork_count도 매번 증가한다.
+     * 반면 "내가 가져온 여행" 목록은 글이 중복 노출되면 안 되므로 기록은 (post, user)당 1행으로 UPSERT한다.
      */
     @Transactional
     public ForkResponse fork(UUID userId, Long postId) {
         findFeedPost(postId);
 
-        if (feedForkRepository.existsByPostIdAndUserId(postId, userId)) {
-            throw new CommunityException(ErrorCode.FEED_ALREADY_FORKED);
-        }
-
-        try {
-            feedForkRepository.saveAndFlush(FeedFork.builder()
-                    .postId(postId)
-                    .userId(userId)
-                    .build());
-        } catch (DataIntegrityViolationException e) {
-            throw new CommunityException(ErrorCode.FEED_ALREADY_FORKED);
-        }
-
+        feedForkRepository.upsertFork(postId, userId, LocalDateTime.now());
         postRepository.addForkCount(postId, 1);
+
         return buildResponse(postId);
     }
 
