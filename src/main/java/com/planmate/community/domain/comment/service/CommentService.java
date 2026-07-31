@@ -1,5 +1,6 @@
 package com.planmate.community.domain.comment.service;
 
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.common.exception.CommunityException;
@@ -42,13 +43,13 @@ public class CommentService {
         ensurePostExists(postId);
         validateParent(postId, request.parentId());
 
-        String nickname = userClient.getNickname(userId)
+        AuthorProfile author = userClient.getAuthor(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
 
         Comment comment = Comment.builder()
                 .postId(postId)
                 .userId(userId)
-                .authorNickname(nickname)
+                .authorNickname(author.nickname())
                 .content(request.content())
                 .parentId(request.parentId())
                 .build();
@@ -56,7 +57,7 @@ public class CommentService {
         Comment saved = commentRepository.save(comment);
         postRepository.addCommentCount(postId, 1);
         userStatsService.recordCommentCreated(userId);
-        return CommentResponse.of(saved, nickname, findLevel(userId));
+        return CommentResponse.of(saved, author, findLevel(userId));
     }
 
     public PageResponse<CommentResponse> getComments(Long postId, int page, int size) {
@@ -66,15 +67,15 @@ public class CommentService {
                 postId, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE)));
 
         List<UUID> userIds = comments.getContent().stream().map(Comment::getUserId).distinct().toList();
-        Map<UUID, String> freshNicknames = userClient.getNicknames(userIds);
+        Map<UUID, AuthorProfile> authors = userClient.getAuthors(userIds);
         Map<UUID, Integer> levels = userStatsRepository.findAllById(userIds).stream()
                 .collect(Collectors.toMap(UserStats::getUserId, UserStats::getLevel));
 
         List<CommentResponse> items = comments.getContent().stream()
                 .map(comment -> CommentResponse.of(
                         comment,
-                        // 최신 닉네임 조회 실패 시 댓글에 저장된 닉네임 스냅샷으로 fallback
-                        resolveNickname(freshNicknames.get(comment.getUserId()), comment.getAuthorNickname()),
+                        // 조회 실패 시 null — DTO가 댓글의 닉네임 스냅샷으로 fallback한다
+                        authors.get(comment.getUserId()),
                         levels.getOrDefault(comment.getUserId(), 1)))
                 .toList();
 
@@ -89,13 +90,8 @@ public class CommentService {
         }
         comment.updateContent(request.content());
 
-        String freshNickname = userClient.getNickname(comment.getUserId()).orElse(comment.getAuthorNickname());
-        return CommentResponse.of(comment, freshNickname, findLevel(comment.getUserId()));
-    }
-
-    // 최신 닉네임 조회 실패 시 댓글에 저장된 닉네임 스냅샷으로 fallback
-    private String resolveNickname(String fresh, String stored) {
-        return fresh != null ? fresh : stored;
+        AuthorProfile author = userClient.getAuthor(comment.getUserId()).orElse(null);
+        return CommentResponse.of(comment, author, findLevel(comment.getUserId()));
     }
 
     @Transactional

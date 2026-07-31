@@ -1,5 +1,7 @@
 package com.planmate.community.common.client;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.ParameterizedTypeReference;
@@ -27,12 +29,15 @@ import java.util.stream.Collectors;
  * 메인 백엔드의 내부 사용자 조회 API 클라이언트.
  * Redis 캐시(TTL 10분, MGET/파이프라인 일괄 접근) → 내부 API 순으로 조회하며, 실패 시 빈 결과를 반환한다
  * (호출부는 게시글에 저장된 닉네임 스냅샷으로 fallback).
+ *
+ * 캐시 키는 메인 백엔드의 CommunityUserCacheEvictor와 맞물린 서비스 간 계약이다 —
+ * prefix를 바꾸면 프로필 변경 시 즉시 무효화가 조용히 동작하지 않게 되므로 양쪽을 함께 고쳐야 한다.
  */
 @Slf4j
 @Component
 public class UserClient {
 
-    private static final String CACHE_KEY_PREFIX = "community:user:nickname:";
+    private static final String CACHE_KEY_PREFIX = "community:user:profile:";
     private static final String VISIBILITY_CACHE_KEY_PREFIX = "community:user:profile-public:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     // 공개 설정을 껐을 때 반영이 10분이나 늦으면 안 되므로 닉네임보다 짧게 캐싱한다
@@ -40,25 +45,28 @@ public class UserClient {
 
     private final RestClient restClient;
     private final StringRedisTemplate redisTemplate;
+    private final ObjectMapper objectMapper;
     private final String internalApiToken;
 
     public UserClient(
             RestClient.Builder restClientBuilder,
             StringRedisTemplate redisTemplate,
+            ObjectMapper objectMapper,
             @Value("${internal.api-base-url}") String apiBaseUrl,
             @Value("${internal.api-token}") String internalApiToken
     ) {
         this.restClient = restClientBuilder.baseUrl(apiBaseUrl).build();
         this.redisTemplate = redisTemplate;
+        this.objectMapper = objectMapper;
         this.internalApiToken = internalApiToken;
     }
 
-    public Optional<String> getNickname(UUID userId) {
-        return Optional.ofNullable(getNicknames(List.of(userId)).get(userId));
+    public Optional<AuthorProfile> getAuthor(UUID userId) {
+        return Optional.ofNullable(getAuthors(List.of(userId)).get(userId));
     }
 
-    public Map<UUID, String> getNicknames(Collection<UUID> userIds) {
-        Map<UUID, String> result = new HashMap<>();
+    public Map<UUID, AuthorProfile> getAuthors(Collection<UUID> userIds) {
+        Map<UUID, AuthorProfile> result = new HashMap<>();
         List<UUID> distinctIds = new ArrayList<>(new LinkedHashSet<>(userIds));
         if (distinctIds.isEmpty()) {
             return result;
@@ -68,17 +76,17 @@ public class UserClient {
         List<String> cached = readCache(distinctIds);
         for (int i = 0; i < distinctIds.size(); i++) {
             UUID id = distinctIds.get(i);
-            String nickname = cached.get(i);
-            if (nickname != null) {
-                result.put(id, nickname);
+            AuthorProfile profile = deserialize(cached.get(i));
+            if (profile != null) {
+                result.put(id, profile);
             } else {
                 cacheMisses.add(id);
             }
         }
 
         if (!cacheMisses.isEmpty()) {
-            Map<UUID, String> fetched = fetchUsers(cacheMisses).entrySet().stream()
-                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> entry.getValue().nickname()));
+            Map<UUID, AuthorProfile> fetched = fetchUsers(cacheMisses).entrySet().stream()
+                    .collect(Collectors.toMap(Map.Entry::getKey, entry -> toProfile(entry.getValue())));
             result.putAll(fetched);
             writeCache(fetched);
         }
@@ -153,19 +161,30 @@ public class UserClient {
                 return values;
             }
         } catch (Exception e) {
-            log.warn("닉네임 캐시 일괄 조회 실패 (count={}): {}", userIds.size(), e.getMessage());
+            log.warn("작성자 프로필 캐시 일괄 조회 실패 (count={}): {}", userIds.size(), e.getMessage());
         }
         return Collections.<String>nCopies(userIds.size(), null);
     }
 
     // 파이프라인 일괄 저장 — 캐시 저장 실패가 요청을 실패시키지 않는다
-    private void writeCache(Map<UUID, String> nicknames) {
-        if (nicknames.isEmpty()) {
+    private void writeCache(Map<UUID, AuthorProfile> profiles) {
+        if (profiles.isEmpty()) {
             return;
         }
+        Map<UUID, String> serialized = new HashMap<>();
+        profiles.forEach((userId, profile) -> {
+            String json = serialize(profile);
+            if (json != null) {
+                serialized.put(userId, json);
+            }
+        });
+        if (serialized.isEmpty()) {
+            return;
+        }
+
         try {
             redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
-                for (Map.Entry<UUID, String> entry : nicknames.entrySet()) {
+                for (Map.Entry<UUID, String> entry : serialized.entrySet()) {
                     connection.stringCommands().set(
                             (CACHE_KEY_PREFIX + entry.getKey()).getBytes(StandardCharsets.UTF_8),
                             entry.getValue().getBytes(StandardCharsets.UTF_8),
@@ -176,10 +195,43 @@ public class UserClient {
                 return null;
             });
         } catch (Exception e) {
-            log.warn("닉네임 캐시 일괄 저장 실패 (count={}): {}", nicknames.size(), e.getMessage());
+            log.warn("작성자 프로필 캐시 일괄 저장 실패 (count={}): {}", serialized.size(), e.getMessage());
         }
     }
 
-    private record InternalUserResponse(UUID userId, String nickname, boolean profilePublic) {
+    private AuthorProfile toProfile(InternalUserResponse user) {
+        return new AuthorProfile(user.nickname(), user.profileImageUrl(), user.avatarHash());
+    }
+
+    private String serialize(AuthorProfile profile) {
+        try {
+            return objectMapper.writeValueAsString(profile);
+        } catch (Exception e) {
+            log.warn("작성자 프로필 직렬화 실패 (nickname={}): {}", profile.nickname(), e.getMessage());
+            return null;
+        }
+    }
+
+    // 캐시 미스(null)와 깨진 값 모두 null로 취급해 내부 API 재조회로 넘긴다
+    private AuthorProfile deserialize(String json) {
+        if (json == null) {
+            return null;
+        }
+        try {
+            return objectMapper.readValue(json, AuthorProfile.class);
+        } catch (Exception e) {
+            log.warn("작성자 프로필 역직렬화 실패: {}", e.getMessage());
+            return null;
+        }
+    }
+
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record InternalUserResponse(
+            UUID userId,
+            String nickname,
+            boolean profilePublic,
+            String profileImageUrl,
+            String avatarHash
+    ) {
     }
 }

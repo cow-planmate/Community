@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.planmate.community.common.access.ProfileAccessValidator;
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
@@ -52,6 +53,12 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PostServiceTest {
+
+    // 프로필 사진 없는 작성자 — 아이콘은 클라이언트가 이니셜로 그린다
+    private static AuthorProfile author(String nickname) {
+        return new AuthorProfile(nickname, null, null);
+    }
+
 
     @Mock
     private PostRepository postRepository;
@@ -122,7 +129,7 @@ class PostServiceTest {
     @Test
     @DisplayName("메이트 게시글 생성 시 모집중 상태·닉네임 스냅샷·활동 통계 기록이 수행된다")
     void createMatePostDefaults() {
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(mateParticipantRepository.countByPostId(1L)).thenReturn(0L);
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
@@ -149,7 +156,7 @@ class PostServiceTest {
     @Test
     @DisplayName("사용자 정보를 가져올 수 없으면 게시글 생성이 실패한다")
     void createPostWithoutUserInfo() {
-        when(userClient.getNickname(userId)).thenReturn(Optional.empty());
+        when(userClient.getAuthor(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> postService.createPost(userId, createRequest("free", null, null, null, null)))
                 .isInstanceOf(CommunityException.class)
@@ -210,7 +217,8 @@ class PostServiceTest {
     void getPostRegistersViewAndMyReaction() {
         Post post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("최신닉네임"));
+        when(userClient.getAuthor(userId))
+                .thenReturn(Optional.of(new AuthorProfile("최신닉네임", "https://cdn.test/me.png", "hash123")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
 
@@ -218,6 +226,8 @@ class PostServiceTest {
 
         verify(viewCountService).registerView(1L);
         assertThat(response.author()).isEqualTo("최신닉네임");
+        assertThat(response.authorImage()).isEqualTo("https://cdn.test/me.png");
+        assertThat(response.authorAvatarHash()).isEqualTo("hash123");
         assertThat(response.myReaction()).isNull();
         assertThat(response.myFork()).isNull();
         verify(feedForkRepository, never()).existsByPostIdAndUserId(any(), any());
@@ -228,7 +238,7 @@ class PostServiceTest {
     void getFeedPostWithMyForkTrue() {
         Post post = feedPost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
         when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(true);
@@ -243,7 +253,7 @@ class PostServiceTest {
     void getFeedPostWithMyForkFalseOrNull() {
         Post post = feedPost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(false);
 
@@ -275,7 +285,7 @@ class PostServiceTest {
         UUID authorId = UUID.randomUUID();
         when(postRepository.findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("feed", 0, 20, "latest", null, null, null, null, null, authorId, authorId);
@@ -291,7 +301,7 @@ class PostServiceTest {
         when(userClient.isProfilePublic(authorId)).thenReturn(true);
         when(postRepository.findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("feed", 0, 20, "latest", null, null, null, null, null, authorId, null);
@@ -306,7 +316,7 @@ class PostServiceTest {
                 .thenReturn(new PageImpl<>(List.of()));
         when(postRepository.searchByCategory(eq(Category.FREE), anyString(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("free", 0, 20, "latest", null, null, null, null, null, null, null);
@@ -370,7 +380,7 @@ class PostServiceTest {
     @Test
     @DisplayName("피드 게시글 생성 시 피드 필드가 직렬화되어 저장되고 응답에 반영된다")
     void createFeedPostStoresFeedFields() throws Exception {
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
             Post post = invocation.getArgument(0);
@@ -406,7 +416,7 @@ class PostServiceTest {
     @Test
     @DisplayName("피드가 아닌 게시글 생성 시 피드 전용 필드는 null로 저장된다")
     void createNonFeedPostIgnoresFeedFields() {
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("여행자"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
             Post post = invocation.getArgument(0);
@@ -441,7 +451,7 @@ class PostServiceTest {
                 .thenReturn(new PageImpl<>(List.of()));
         when(postRepository.findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null, null, null);

@@ -2,6 +2,7 @@ package com.planmate.community.domain.post.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 
@@ -16,6 +17,10 @@ public record PostDetailResponse(
         String category,
         String title,
         String author,
+        /** 작성자 프로필 사진 URL. 없으면 클라이언트가 authorAvatarHash(Gravatar) → 이니셜 순으로 떨어진다 */
+        String authorImage,
+        /** 작성자 이메일 해시(Gravatar 식별자). 이메일 원문은 내려오지 않는다 */
+        String authorAvatarHash,
         int level,
         int likes,
         int dislikes,
@@ -53,14 +58,17 @@ public record PostDetailResponse(
         String myReaction
 ) {
 
-    public static PostDetailResponse of(Post post, String freshNickname, int level, JsonNode content, String myReaction,
+    public static PostDetailResponse of(Post post, AuthorProfile author, int level, JsonNode content, String myReaction,
                                         Integer participants, List<String> tags, JsonNode itinerary, Boolean myFork) {
+        AuthorProfile resolved = AuthorProfile.resolve(author, post.getAuthorNickname());
         return new PostDetailResponse(
                 post.getPostId(),
                 post.getUserId(),
                 post.getCategory().toLowerValue(),
                 post.getTitle(),
-                freshNickname != null ? freshNickname : post.getAuthorNickname(),
+                resolved.nickname(),
+                resolved.profileImageUrl(),
+                resolved.avatarHash(),
                 level,
                 post.getLikeCount(),
                 post.getDislikeCount(),

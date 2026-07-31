@@ -1,5 +1,6 @@
 package com.planmate.community.domain.stats.service;
 
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.domain.comment.dto.CommentResponse;
@@ -92,7 +93,7 @@ public class MyActivityService {
     public PageResponse<CommentResponse> getMyComments(UUID userId, int page, int size) {
         Page<Comment> comments = commentRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable(page, size));
 
-        String freshNickname = userClient.getNickname(userId).orElse(null);
+        AuthorProfile author = userClient.getAuthor(userId).orElse(null);
         int level = userStatsRepository.findById(userId).map(UserStats::getLevel).orElse(1);
 
         // 목록에서 원문 제목 노출 + 원문으로 이동해야 하므로 한 번에 조회한다 (N+1 방지)
@@ -103,7 +104,7 @@ public class MyActivityService {
 
         return PageResponse.of(comments, comments.getContent().stream()
                 .map(comment -> CommentResponse.of(
-                        comment, freshNickname, level, postsById.get(comment.getPostId())))
+                        comment, author, level, postsById.get(comment.getPostId())))
                 .toList());
     }
 
