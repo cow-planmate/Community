@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
@@ -23,7 +24,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
- * 게시글 응답 조립 — 최신 닉네임(내부 API 캐시), 레벨, 메이트 참여자 수를 배치로 채운다.
+ * 게시글 응답 조립 — 최신 작성자 정보(내부 API 캐시: 닉네임·프로필 아이콘), 레벨, 메이트 참여자 수를 배치로 채운다.
  */
 @Component
 @RequiredArgsConstructor
@@ -36,32 +37,28 @@ public class PostAssembler {
 
     public List<PostSummaryResponse> toSummaries(List<Post> posts) {
         List<UUID> userIds = posts.stream().map(Post::getUserId).distinct().toList();
-        Map<UUID, String> freshNicknames = userClient.getNicknames(userIds);
+        Map<UUID, AuthorProfile> authors = userClient.getAuthors(userIds);
         Map<UUID, Integer> levels = findLevels(userIds);
         Map<Long, Integer> participantCounts = findParticipantCounts(posts);
 
         return posts.stream()
                 .map(post -> PostSummaryResponse.of(
                         post,
-                        resolveNickname(freshNicknames.get(post.getUserId()), post.getAuthorNickname()),
+                        authors.get(post.getUserId()),
                         levels.getOrDefault(post.getUserId(), 1),
                         participantsFor(post, participantCounts),
                         readTags(post)))
                 .toList();
     }
 
-    // 최신 닉네임 조회 실패(사용자 서비스 장애 등) 시 게시글에 저장된 닉네임 스냅샷으로 fallback
-    private String resolveNickname(String fresh, String stored) {
-        return fresh != null ? fresh : stored;
-    }
-
     public PostDetailResponse toDetail(Post post, String myReaction, Boolean myFork) {
-        String freshNickname = userClient.getNickname(post.getUserId()).orElse(post.getAuthorNickname());
+        // 조회 실패(사용자 서비스 장애 등) 시 null — DTO가 게시글의 닉네임 스냅샷으로 fallback한다
+        AuthorProfile author = userClient.getAuthor(post.getUserId()).orElse(null);
         int level = userStatsRepository.findById(post.getUserId()).map(UserStats::getLevel).orElse(1);
         Integer participants = post.getCategory() == Category.MATE
                 ? (int) mateParticipantRepository.countByPostId(post.getPostId())
                 : null;
-        return PostDetailResponse.of(post, freshNickname, level, readContent(post.getContent()), myReaction, participants,
+        return PostDetailResponse.of(post, author, level, readContent(post.getContent()), myReaction, participants,
                 readTags(post), post.getItinerary() != null ? readContent(post.getItinerary()) : null, myFork);
     }
 

@@ -1,6 +1,7 @@
 package com.planmate.community.domain.stats.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.fork.entity.FeedFork;
@@ -41,6 +42,12 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class MyActivityServiceTest {
+
+    // 프로필 사진 없는 작성자 — 아이콘은 클라이언트가 이니셜로 그린다
+    private static AuthorProfile author(String nickname) {
+        return new AuthorProfile(nickname, null, null);
+    }
+
 
     @Mock
     private PostRepository postRepository;
@@ -97,7 +104,7 @@ class MyActivityServiceTest {
     }
 
     private void stubAssembler() {
-        when(userClient.getNicknames(anyCollection())).thenReturn(Map.of());
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
     }
 

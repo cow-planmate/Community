@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.planmate.community.common.access.ProfileAccessValidator;
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.common.exception.CommunityException;
@@ -64,13 +65,13 @@ public class PostService {
         Category category = Category.from(request.category());
         validateCategoryFields(category, request);
 
-        String nickname = userClient.getNickname(userId)
+        AuthorProfile author = userClient.getAuthor(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
 
         Post post = Post.builder()
                 .category(category)
                 .userId(userId)
-                .authorNickname(nickname)
+                .authorNickname(author.nickname())
                 .title(request.title())
                 .content(writeContent(request.content()))
                 .contentText(request.contentText() != null ? request.contentText() : "")

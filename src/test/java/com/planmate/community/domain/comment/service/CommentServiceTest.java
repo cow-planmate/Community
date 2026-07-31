@@ -1,5 +1,6 @@
 package com.planmate.community.domain.comment.service;
 
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
@@ -16,20 +17,33 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.data.domain.PageImpl;
+import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
+import static org.mockito.ArgumentMatchers.anyIterable;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class CommentServiceTest {
+
+    // 프로필 사진 없는 작성자 — 아이콘은 클라이언트가 이니셜로 그린다
+    private static AuthorProfile author(String nickname) {
+        return new AuthorProfile(nickname, null, null);
+    }
+
 
     @Mock
     private CommentRepository commentRepository;
@@ -66,7 +80,7 @@ class CommentServiceTest {
     @DisplayName("댓글 작성 시 닉네임 스냅샷 저장과 댓글 수 증가가 수행된다")
     void createComment() {
         when(postRepository.existsById(1L)).thenReturn(true);
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("댓글러"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("댓글러")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
             Comment saved = invocation.getArgument(0);
@@ -135,7 +149,7 @@ class CommentServiceTest {
         Comment parent = comment(UUID.randomUUID());
         when(postRepository.existsById(1L)).thenReturn(true);
         when(commentRepository.findById(10L)).thenReturn(Optional.of(parent));
-        when(userClient.getNickname(userId)).thenReturn(Optional.of("답글러"));
+        when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("답글러")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
             Comment saved = invocation.getArgument(0);
@@ -221,5 +235,43 @@ class CommentServiceTest {
         verify(postRepository).addCommentCount(1L, -1);
         verify(commentRepository, never()).findByParentId(any());
         verify(userStatsService).recordCommentDeleted(userId);
+    }
+
+    @Test
+    @DisplayName("댓글 목록에 작성자 프로필 사진과 Gravatar 해시가 함께 실린다")
+    void getCommentsIncludesAuthorAvatar() {
+        Comment comment = comment(userId);
+        when(postRepository.existsById(1L)).thenReturn(true);
+        when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(1L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(comment)));
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of(
+                userId, new AuthorProfile("최신닉네임", "https://cdn.test/profile.png", "hash123")));
+        when(userStatsRepository.findAllById(anyIterable())).thenReturn(List.of());
+
+        var response = commentService.getComments(1L, 0, 10);
+
+        var item = response.items().get(0);
+        assertThat(item.author()).isEqualTo("최신닉네임");
+        assertThat(item.authorImage()).isEqualTo("https://cdn.test/profile.png");
+        assertThat(item.authorAvatarHash()).isEqualTo("hash123");
+    }
+
+    @Test
+    @DisplayName("작성자 조회에 실패하면 닉네임 스냅샷으로 떨어지고 아이콘 정보는 비워둔다")
+    void getCommentsFallsBackToSnapshot() {
+        Comment comment = comment(userId);
+        when(postRepository.existsById(1L)).thenReturn(true);
+        when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(1L), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(comment)));
+        // 메인 백엔드 장애 등으로 빈 결과가 오는 상황
+        when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
+        when(userStatsRepository.findAllById(anyIterable())).thenReturn(List.of());
+
+        var response = commentService.getComments(1L, 0, 10);
+
+        var item = response.items().get(0);
+        assertThat(item.author()).isEqualTo("작성자");
+        assertThat(item.authorImage()).isNull();
+        assertThat(item.authorAvatarHash()).isNull();
     }
 }

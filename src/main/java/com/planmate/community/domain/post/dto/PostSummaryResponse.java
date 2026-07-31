@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 
@@ -15,6 +16,10 @@ public record PostSummaryResponse(
         String category,
         String title,
         String author,
+        /** 작성자 프로필 사진 URL. 없으면 클라이언트가 authorAvatarHash(Gravatar) → 이니셜 순으로 떨어진다 */
+        String authorImage,
+        /** 작성자 이메일 해시(Gravatar 식별자). 이메일 원문은 내려오지 않는다 */
+        String authorAvatarHash,
         int level,
         int likes,
         int dislikes,
@@ -52,13 +57,16 @@ public record PostSummaryResponse(
     public record Coords(double lat, double lng) {
     }
 
-    public static PostSummaryResponse of(Post post, String freshNickname, int level, Integer participants, List<String> tags) {
+    public static PostSummaryResponse of(Post post, AuthorProfile author, int level, Integer participants, List<String> tags) {
+        AuthorProfile resolved = AuthorProfile.resolve(author, post.getAuthorNickname());
         return new PostSummaryResponse(
                 post.getPostId(),
                 post.getUserId(),
                 post.getCategory().toLowerValue(),
                 post.getTitle(),
-                freshNickname != null ? freshNickname : post.getAuthorNickname(),
+                resolved.nickname(),
+                resolved.profileImageUrl(),
+                resolved.avatarHash(),
                 level,
                 post.getLikeCount(),
                 post.getDislikeCount(),
@@ -84,7 +92,8 @@ public record PostSummaryResponse(
 
     public PostSummaryResponse withActedAt(LocalDateTime actedAt) {
         return new PostSummaryResponse(
-                id, userId, category, title, author, level, likes, dislikes, comments, views, createdAt, image,
+                id, userId, category, title, author, authorImage, authorAvatarHash, level, likes, dislikes, comments,
+                views, createdAt, image,
                 isAnswered, participants, maxParticipants, status, region, location, rating, coords,
                 durationDays, forks, tags, description, actedAt
         );
