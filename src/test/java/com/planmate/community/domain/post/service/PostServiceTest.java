@@ -56,7 +56,7 @@ class PostServiceTest {
 
     // 프로필 사진 없는 작성자 — 아이콘은 클라이언트가 이니셜로 그린다
     private static AuthorProfile author(String nickname) {
-        return new AuthorProfile(nickname, null, null);
+        return new AuthorProfile(nickname, null, null, false);
     }
 
 
@@ -218,7 +218,7 @@ class PostServiceTest {
         Post post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getAuthor(userId))
-                .thenReturn(Optional.of(new AuthorProfile("최신닉네임", "https://cdn.test/me.png", "hash123")));
+                .thenReturn(Optional.of(new AuthorProfile("최신닉네임", "https://cdn.test/me.png", "hash123", false)));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
 
@@ -272,7 +272,7 @@ class PostServiceTest {
         when(userClient.isProfilePublic(authorId)).thenReturn(false);
 
         assertThatThrownBy(() -> postService.getPosts(
-                "feed", 0, 20, "latest", null, null, null, null, null, authorId, UUID.randomUUID()))
+                "feed", 0, 20, "latest", "desc", null, null, null, null, null, authorId, UUID.randomUUID()))
                 .isInstanceOf(CommunityException.class)
                 .hasFieldOrPropertyWithValue("errorCode", ErrorCode.PROFILE_PRIVATE);
 
@@ -288,7 +288,7 @@ class PostServiceTest {
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("feed", 0, 20, "latest", null, null, null, null, null, authorId, authorId);
+        postService.getPosts("feed", 0, 20, "latest", "desc", null, null, null, null, null, authorId, authorId);
 
         verify(postRepository).findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class));
         verify(userClient, never()).isProfilePublic(any());
@@ -304,7 +304,7 @@ class PostServiceTest {
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("feed", 0, 20, "latest", null, null, null, null, null, authorId, null);
+        postService.getPosts("feed", 0, 20, "latest", "desc", null, null, null, null, null, authorId, null);
 
         verify(postRepository).findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class));
     }
@@ -319,10 +319,10 @@ class PostServiceTest {
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("free", 0, 20, "latest", null, null, null, null, null, null, null);
+        postService.getPosts("free", 0, 20, "latest", "desc", null, null, null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FREE), any(Pageable.class));
 
-        postService.getPosts("free", 0, 20, "latest", "맛집", null, null, null, null, null, null);
+        postService.getPosts("free", 0, 20, "latest", "desc", "맛집", null, null, null, null, null, null);
         verify(postRepository).searchByCategory(eq(Category.FREE), eq("맛집"), any(Pageable.class));
     }
 
@@ -454,11 +454,11 @@ class PostServiceTest {
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
-        postService.getPosts("feed", 0, 20, "forks", null, null, null, null, null, null, null);
+        postService.getPosts("feed", 0, 20, "forks", "desc", null, null, null, null, null, null, null);
         verify(postRepository).findByCategory(eq(Category.FEED), any(Pageable.class));
         verify(postRepository, never()).findFeedPosts(any(), any(), any(), any(), any(), any(), any());
 
-        postService.getPosts("feed", 0, 20, "forks", null, "서울", 2, 3, "#극한의J", null, null);
+        postService.getPosts("feed", 0, 20, "forks", "desc", null, "서울", 2, 3, "#극한의J", null, null);
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
         verify(postRepository).findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getSort().getOrderFor("forkCount")).isNotNull();

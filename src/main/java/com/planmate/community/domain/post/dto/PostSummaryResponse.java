@@ -20,6 +20,8 @@ public record PostSummaryResponse(
         String authorImage,
         /** 작성자 이메일 해시(Gravatar 식별자). 이메일 원문은 내려오지 않는다 */
         String authorAvatarHash,
+        /** 탈퇴한 사용자. true면 author는 "탈퇴한 사용자"이고 프로필로 이동할 수 없다 */
+        boolean authorDeleted,
         int level,
         int likes,
         int dislikes,
@@ -67,6 +69,7 @@ public record PostSummaryResponse(
                 resolved.nickname(),
                 resolved.profileImageUrl(),
                 resolved.avatarHash(),
+                resolved.deleted(),
                 level,
                 post.getLikeCount(),
                 post.getDislikeCount(),
@@ -92,7 +95,7 @@ public record PostSummaryResponse(
 
     public PostSummaryResponse withActedAt(LocalDateTime actedAt) {
         return new PostSummaryResponse(
-                id, userId, category, title, author, authorImage, authorAvatarHash, level, likes, dislikes, comments,
+                id, userId, category, title, author, authorImage, authorAvatarHash, authorDeleted, level, likes, dislikes, comments,
                 views, createdAt, image,
                 isAnswered, participants, maxParticipants, status, region, location, rating, coords,
                 durationDays, forks, tags, description, actedAt

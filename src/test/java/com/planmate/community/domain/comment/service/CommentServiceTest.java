@@ -41,7 +41,7 @@ class CommentServiceTest {
 
     // 프로필 사진 없는 작성자 — 아이콘은 클라이언트가 이니셜로 그린다
     private static AuthorProfile author(String nickname) {
-        return new AuthorProfile(nickname, null, null);
+        return new AuthorProfile(nickname, null, null, false);
     }
 
 
@@ -245,7 +245,7 @@ class CommentServiceTest {
         when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(1L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(comment)));
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of(
-                userId, new AuthorProfile("최신닉네임", "https://cdn.test/profile.png", "hash123")));
+                userId, new AuthorProfile("최신닉네임", "https://cdn.test/profile.png", "hash123", false)));
         when(userStatsRepository.findAllById(anyIterable())).thenReturn(List.of());
 
         var response = commentService.getComments(1L, 0, 10);

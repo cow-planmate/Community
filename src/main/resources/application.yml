@@ -43,12 +43,30 @@ spring:
       max-request-size: 12MB
 
 jwt:
+  # 메인 백엔드의 서명 공개키. 컨테이너 간 직접 조회라 nginx 노출이 필요 없다.
+  jwks-uri: ${MAIN_BACKEND_JWKS:http://localhost:8090/.well-known/jwks.json}
+  # 아래 둘은 전환 기간 전용이다. 메인 백엔드가 RS256 으로 넘어간 뒤 15분(access 토큰 수명)이
+  # 지나면 주입을 끊는다 — 그 시점부터 이 서비스는 공개키만 갖고, 토큰을 위조할 수단이 없다.
   secret: ${JWT_SECRET:bG9jYWwtZGV2LXNlY3JldC1sb2NhbC1kZXYtc2VjcmV0LWxvY2FsLWRldi1zZWNyZXQ=}
   secret-encoding: ${JWT_SECRET_ENCODING:base64}
 
 internal:
-  api-base-url: ${MAIN_BACKEND_URL:http://localhost:8080}
   api-token: ${INTERNAL_API_TOKEN:local-internal-token}
+
+# 메인 백엔드(Backend-v2)의 내부 gRPC 서비스. 컨테이너 간 내부 통신이라 평문을 쓴다.
+grpc:
+  client:
+    internal-user:
+      address: ${MAIN_BACKEND_GRPC:static://localhost:9090}
+      negotiation-type: plaintext
+      # WatchUserChanges 는 몇 시간씩 열려 있는 스트림이라, 연결이 조용히 끊기면
+      # (호스트 급사, 방화벽/conntrack 만료) 클라이언트는 끊긴 줄 모르고 onError 도 받지
+      # 못해 재연결이 영영 안 걸린다. 핑으로 이 half-open 상태를 감지한다.
+      # 5분은 gRPC 서버의 기본 permit-keep-alive-time 과 같은 값이다 — 더 짧게 잡으면
+      # 서버가 ENHANCE_YOUR_CALM 으로 GOAWAY 를 보내 오히려 연결이 끊긴다.
+      enable-keep-alive: true
+      keep-alive-time: 5m
+      keep-alive-timeout: 20s
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

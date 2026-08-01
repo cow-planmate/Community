@@ -17,6 +17,8 @@ public record CommentResponse(
         String authorImage,
         /** 작성자 이메일 해시(Gravatar 식별자). 이메일 원문은 내려오지 않는다 */
         String authorAvatarHash,
+        /** 탈퇴한 사용자. true면 author는 "탈퇴한 사용자"이고 프로필로 이동할 수 없다 */
+        boolean authorDeleted,
         int level,
         String content,
         /** 내 활동 목록처럼 원문을 함께 보여줄 때만 채워진다 (게시글 상세의 댓글 목록에서는 null) */
@@ -41,6 +43,7 @@ public record CommentResponse(
                 resolved.nickname(),
                 resolved.profileImageUrl(),
                 resolved.avatarHash(),
+                resolved.deleted(),
                 level,
                 comment.getContent(),
                 post != null ? post.getTitle() : null,

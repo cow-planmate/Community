@@ -99,12 +99,14 @@ public class PostService {
     /**
      * @param viewerId 로그인 사용자 id (비로그인 null) — 작성자별 목록의 공개 여부 판단에만 쓴다
      */
-    public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue, String q,
+    public PageResponse<PostSummaryResponse> getPosts(String categoryValue, int page, int size, String sortValue,
+                                                      String orderValue, String q,
                                                       String region, Integer minDays, Integer maxDays, String tag,
                                                       UUID userId, UUID viewerId) {
         Category category = Category.from(categoryValue);
         SortType sortType = SortType.from(sortValue);
-        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE), sortType.toSort());
+        Pageable pageable = PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE),
+                sortType.toSort(SortType.direction(orderValue)));
 
         // 작성자별 목록은 프로필의 일부다 — 비공개 프로필이면 본인 외에는 목록도 볼 수 없다.
         // (게시판 전체 목록에는 이 사용자의 글이 계속 보인다. 감추는 건 "누가 썼는지로 모아보는" 경로다)

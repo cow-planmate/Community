@@ -45,7 +45,7 @@ class MyActivityServiceTest {
 
     // 프로필 사진 없는 작성자 — 아이콘은 클라이언트가 이니셜로 그린다
     private static AuthorProfile author(String nickname) {
-        return new AuthorProfile(nickname, null, null);
+        return new AuthorProfile(nickname, null, null, false);
     }
 
 

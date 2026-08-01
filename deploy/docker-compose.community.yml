@@ -1,9 +1,24 @@
-# planmatetest(docker53, 192.168.0.53) — Backend-v2 스택 옆에 커뮤니티만 추가 기동.
+# planmatetest(docker53, 192.168.0.53) — Backend-v2 스택 옆에 커뮤니티를 기동한다.
 # 기존 planmate-v2 스택은 건드리지 않고, 같은 네트워크(planmate-v2_default)에 붙여
-# planmate-postgres / planmate-redis / planmate-app 를 컨테이너명으로 참조한다.
+# planmate-postgres / planmate-app 를 컨테이너명으로 참조한다.
 #
-# 실행:  docker compose --env-file /opt/planmate-v2/.env -f docker-compose.community.yml up -d
-#   (--env-file 로 POSTGRES_USER/PASSWORD/JWT_SECRET/CORS_ALLOWED_ORIGINS 를 v2 .env에서 그대로 가져옴 → 시크릿 공유)
+# 무엇이 갈렸고 무엇이 남았는지:
+#   Redis    분리됨 — 이 스택이 자기 redis-community 를 띄운다.
+#   DB 계정  분리됨 — community_app 은 planmate2 에 CONNECT 자체가 안 된다.
+#   JWT      전환 중 — v2 가 RS256 으로 서명하고 여기는 JWKS 공개키로 검증한다.
+#                      아래 JWT_SECRET 두 줄이 남아 있는 동안은 아직 대칭키를 공유하는
+#                      상태다. 전환이 끝나면 지운다.
+#   남은 공유 자원: Postgres/MinIO 인스턴스 자체, MinIO 루트 자격증명, CORS 설정.
+#
+# 실행:
+#   docker compose --env-file /opt/planmate-v2/.env \
+#                  --env-file /opt/planmate-community/.env \
+#                  -f docker-compose.community.yml up -d
+#
+#   env-file 두 개를 순서대로 넘긴다. 뒤에 온 파일이 이긴다.
+#     /opt/planmate-v2/.env         아직 공유하는 값(MinIO 자격증명, CORS, JWT_SECRET)
+#     /opt/planmate-community/.env  이 서비스 전용 값(DB 계정) — .env.community.example 참고
+#   전용 값을 뒤에 두는 이유는 공유 파일에 같은 이름의 키가 생겨도 덮이지 않게 하기 위함이다.
 #
 # CI/CD: main push → GitHub Actions 가 cycle123/planmate-community:latest 를 Docker Hub 에 push,
 #        docker53 의 Watchtower(WATCHTOWER_LABEL_ENABLE) 가 아래 라벨을 보고 자동 pull+재기동.
@@ -17,23 +32,86 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     environment:
       SERVER_PORT: "8081"
+      # DB: 인스턴스는 v2 와 공유하되 계정을 가른다. 예전에는 ${POSTGRES_USER}(사실상
+      # superuser)를 그대로 썼기 때문에 DB 이름만 다를 뿐 planmate2 를 읽고 쓸 수 있었다.
+      # community_app 은 planmate2 에 CONNECT 자체가 안 된다 — sql/community-db-account.sql 참고.
+      # 자격증명은 /opt/planmate-community/.env 에서 온다(공유 .env 아님).
       SPRING_DATASOURCE_URL: jdbc:postgresql://planmate-postgres:5432/community
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
-      SPRING_DATA_REDIS_HOST: planmate-redis
+      SPRING_DATASOURCE_USERNAME: ${COMMUNITY_DB_USER:-community_app}
+      SPRING_DATASOURCE_PASSWORD: ${COMMUNITY_DB_PASSWORD:?COMMUNITY_DB_PASSWORD 가 필요하다 — /opt/planmate-community/.env 를 --env-file 로 넘겼는지 확인}
+      # Redis: 이 서비스 전용(아래 redis-community). 예전에는 v2의 planmate-redis 를
+      # 같이 썼는데, 거기엔 SharedSync 협업편집의 presence/history 런타임 상태가 산다.
+      # 커뮤니티 캐시 트래픽이 얹히면 eviction 이 그 세션 상태를 날릴 수 있었다.
+      SPRING_DATA_REDIS_HOST: redis-community
       SPRING_DATA_REDIS_PORT: "6379"
-      # JWT: v2 페어링 (raw UTF-8). v2 .env의 JWT_SECRET 그대로 공유
+      # 주의: MINIO_PUBLIC_URL 과 같은 이유로 ${} 치환을 쓰지 않는다. --env-file 로 읽는
+      #       /opt/planmate-v2/.env 에 REDIS_PASSWORD 가 있으면 그 값이 새어들어와,
+      #       비밀번호가 없는 redis-community 에 AUTH 를 시도하다 기동이 깨진다.
+      REDIS_PASSWORD: ""
+      # JWT: v2 가 RS256 으로 서명하고 공개키를 JWKS 로 게시한다. 컨테이너 간 직접
+      # 조회라 nginx 노출이 필요 없다. 못 받아오면 RS256 토큰은 거부되고(검증할 수
+      # 없는 토큰을 통과시키지 않는다) 아래 대칭키 경로만 남는다.
+      MAIN_BACKEND_JWKS: http://planmate-app:8080/.well-known/jwks.json
+      # 아래 둘은 전환 기간 전용이다. v2 가 RS256 으로 넘어간 뒤 access 토큰 수명(15분)이
+      # 지나면 이 두 줄을 지운다 — 그때부터 이 서비스는 공개키만 갖고, 토큰을 위조할
+      # 수단이 사라진다. 그게 이 전환의 목적이다.
       JWT_SECRET: ${JWT_SECRET}
       JWT_SECRET_ENCODING: raw
-      # 내부 유저 API: v2에 아직 미포팅 → 닉네임 최신화는 실패해도 스냅샷으로 읽기 동작(코드 무수정 방침)
-      MAIN_BACKEND_URL: http://planmate-app:8080
+      # 내부 유저 API: v2의 gRPC 서버(9090). 컨테이너 간 통신이라 호스트 publish/nginx 노출 불필요.
+      # 전제: /opt/planmate-v2 의 planmate-app 이 9090 을 열고 있어야 한다.
+      # 붙지 못해도 닉네임은 게시글 스냅샷으로 fallback 하므로 읽기는 계속 동작한다.
+      MAIN_BACKEND_GRPC: static://planmate-app:9090
       INTERNAL_API_TOKEN: local-internal-token
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
-      # MINIO: 이 호스트에 없음 → 이미지 업로드만 비활성(기동엔 지장 없음). 필요시 채우기.
+      # MINIO: 별도 호스트(192.168.0.90)에 있다. 자격증명은 --env-file 로 주입.
+      #   ENDPOINT   = 서버→MinIO 내부 통신. 사설 IP 그대로 둔다.
+      #   PUBLIC_URL = 브라우저가 이미지를 받아오는 주소. 업로드 시점에 DB에 절대 URL로
+      #                박히므로(ImageService#upload) 반드시 외부에서 닿는 https 도메인이어야 한다.
+      #                사설 IP를 넣으면 외부 접속 불가 + https 페이지에서 mixed content 차단.
+      #
+      # 주의: PUBLIC_URL 만 ${} 치환을 쓰지 않는다. --env-file 로 읽는 /opt/planmate-v2/.env 는
+      #       Backend-v2 와 공유하는 파일이라 거기에 MINIO_PUBLIC_URL 이 들어있으면
+      #       ${MINIO_PUBLIC_URL:-...} 의 기본값이 조용히 덮여버린다(:- 는 "미설정"일 때만 적용).
+      #       실제로 그 파일의 사설 IP 값이 새어들어와 외부에서 이미지가 안 보이는 사고가 났다.
+      #       외부 도메인은 비밀값이 아니므로 여기에 고정해 공유 .env 가 못 건드리게 한다.
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://192.168.0.90:9000}
+      MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY}
+      MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
+      MINIO_BUCKET: community
+      MINIO_PUBLIC_URL: https://minio.bapdodi.cloud
     ports:
       - "8081:8081"
     networks:
       - planmate-v2_default
+    depends_on:
+      - redis-community
+
+  # 커뮤니티 전용 Redis. 호스트에 publish 하지 않는다 — 이 스택 안에서만 쓴다.
+  redis-community:
+    image: redis:7-alpine
+    container_name: planmate-community-redis
+    restart: unless-stopped
+    # maxmemory-policy 를 volatile-lru 로 두는 게 핵심이다.
+    #   community:user:*        캐시. TTL 10분/1분. 날아가도 다시 조회하면 그만.
+    #   community:view:delta:*  캐시가 아니다. 아직 DB 에 안 들어간 조회수 버퍼로,
+    #   community:view:dirty    TTL 이 없고 10초 주기로 flush 된다(ViewCountService).
+    # allkeys-lru 로 두면 메모리가 차는 순간 이 버퍼가 지워져 조회수가 조용히 사라진다.
+    # volatile-lru 는 TTL 이 붙은 키만 지우므로 정확히 캐시만 버리고 버퍼는 남긴다.
+    command: >
+      redis-server
+      --maxmemory 256mb
+      --maxmemory-policy volatile-lru
+      --save ""
+      --appendonly no
+    # 볼륨을 두지 않는다. 재기동 시 캐시는 다시 채워지고, 유실되는 것은 마지막 flush 이후
+    # 10초치 조회수뿐이다 — ViewCountService 가 이미 유실을 허용하도록 쓰여 있다.
+    networks:
+      - planmate-v2_default
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
 networks:
   planmate-v2_default:
