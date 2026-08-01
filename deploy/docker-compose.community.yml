@@ -5,9 +5,8 @@
 # 무엇이 갈렸고 무엇이 남았는지:
 #   Redis    분리됨 — 이 스택이 자기 redis-community 를 띄운다.
 #   DB 계정  분리됨 — community_app 은 planmate2 에 CONNECT 자체가 안 된다.
-#   JWT      전환 중 — v2 가 RS256 으로 서명하고 여기는 JWKS 공개키로 검증한다.
-#                      아래 JWT_SECRET 두 줄이 남아 있는 동안은 아직 대칭키를 공유하는
-#                      상태다. 전환이 끝나면 지운다.
+#   JWT      분리됨 — v2 가 RS256 으로 서명하고 여기는 JWKS 공개키로 검증만 한다.
+#                      대칭키 주입은 2026-08-02 에 끊었다.
 #   남은 공유 자원: Postgres/MinIO 인스턴스 자체, MinIO 루트 자격증명, CORS 설정.
 #
 # 실행:
@@ -16,7 +15,7 @@
 #                  -f docker-compose.community.yml up -d
 #
 #   env-file 두 개를 순서대로 넘긴다. 뒤에 온 파일이 이긴다.
-#     /opt/planmate-v2/.env         아직 공유하는 값(MinIO 자격증명, CORS, JWT_SECRET)
+#     /opt/planmate-v2/.env         아직 공유하는 값(MinIO 자격증명, CORS)
 #     /opt/planmate-community/.env  이 서비스 전용 값(DB 계정) — .env.community.example 참고
 #   전용 값을 뒤에 두는 이유는 공유 파일에 같은 이름의 키가 생겨도 덮이지 않게 하기 위함이다.
 #
@@ -52,11 +51,9 @@ services:
       # 조회라 nginx 노출이 필요 없다. 못 받아오면 RS256 토큰은 거부되고(검증할 수
       # 없는 토큰을 통과시키지 않는다) 아래 대칭키 경로만 남는다.
       MAIN_BACKEND_JWKS: http://planmate-app:8080/.well-known/jwks.json
-      # 아래 둘은 전환 기간 전용이다. v2 가 RS256 으로 넘어간 뒤 access 토큰 수명(15분)이
-      # 지나면 이 두 줄을 지운다 — 그때부터 이 서비스는 공개키만 갖고, 토큰을 위조할
-      # 수단이 사라진다. 그게 이 전환의 목적이다.
-      JWT_SECRET: ${JWT_SECRET}
-      JWT_SECRET_ENCODING: raw
+      # 대칭키 주입은 제거했다(2026-08-02 전환 완료). 이 서비스는 이제 공개키만 갖는다 —
+      # 여기가 침해당해도 메인 백엔드의 토큰을 위조할 수 없다. 그게 이 전환의 목적이었다.
+      # 되돌려야 하면 JWT_SECRET / JWT_SECRET_ENCODING=raw 를 다시 넣으면 HS 검증이 살아난다.
       # 내부 유저 API: v2의 gRPC 서버(9090). 컨테이너 간 통신이라 호스트 publish/nginx 노출 불필요.
       # 전제: /opt/planmate-v2 의 planmate-app 이 9090 을 열고 있어야 한다.
       # 붙지 못해도 닉네임은 게시글 스냅샷으로 fallback 하므로 읽기는 계속 동작한다.
