@@ -104,6 +104,20 @@ class UserChangeSubscriberTest {
     }
 
     @Test
+    @DisplayName("구독 호출이 동기적으로 실패해도 재연결 루프가 끊기지 않는다")
+    void reconnectsWhenSubscribeCallThrowsSynchronously() {
+        // 채널이 이미 닫힌 상태 — 옵저버의 onError 가 아니라 호출 자체가 터질 수 있는 경로.
+        // 여기서 재예약하지 않으면 구독이 영영 죽는다.
+        channel.shutdownNow();
+
+        subscriber.subscribe();
+
+        // 예외가 밖으로 새지 않고, 재연결이 예약되어 다시 시도된다
+        await().atMost(5, TimeUnit.SECONDS)
+                .untilAsserted(() -> assertThat(subscriber.reconnectAttempts()).isPositive());
+    }
+
+    @Test
     @DisplayName("캐시 삭제가 실패해도 스트림은 계속 동작한다(best-effort)")
     void survivesRedisFailure() {
         willThrow(new RuntimeException("redis down")).given(redisTemplate).delete(anyCollection());

@@ -17,6 +17,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * 메인 백엔드의 사용자 프로필 변경 스트림을 구독해 이 서비스의 캐시를 무효화한다.
@@ -33,6 +34,8 @@ public class UserChangeSubscriber {
 
     private static final long INITIAL_BACKOFF_SECONDS = 1;
     private static final long MAX_BACKOFF_SECONDS = 60;
+    // 이 시간 이상 붙어 있었으면 "정상 연결이었다"고 보고 백오프를 처음으로 되돌린다
+    private static final long STABLE_CONNECTION_MILLIS = 60_000;
 
     private final InternalUserServiceGrpc.InternalUserServiceStub asyncStub;
     private final StringRedisTemplate redisTemplate;
@@ -45,6 +48,7 @@ public class UserChangeSubscriber {
             });
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final AtomicInteger failures = new AtomicInteger();
+    private final AtomicLong subscribedAt = new AtomicLong();
 
     public UserChangeSubscriber(InternalUserServiceGrpc.InternalUserServiceStub internalUserAsyncStub,
                                 StringRedisTemplate redisTemplate) {
@@ -62,30 +66,44 @@ public class UserChangeSubscriber {
             return;
         }
 
-        asyncStub.watchUserChanges(WatchUserChangesRequest.getDefaultInstance(),
-                new StreamObserver<>() {
-                    @Override
-                    public void onNext(WatchUserChangesResponse event) {
-                        failures.set(0);
-                        evict(event.getUserId());
-                    }
+        subscribedAt.set(System.currentTimeMillis());
+        try {
+            asyncStub.watchUserChanges(WatchUserChangesRequest.getDefaultInstance(),
+                    new StreamObserver<>() {
+                        @Override
+                        public void onNext(WatchUserChangesResponse event) {
+                            failures.set(0);
+                            evict(event.getUserId());
+                        }
 
-                    @Override
-                    public void onError(Throwable t) {
-                        scheduleReconnect(t.getMessage());
-                    }
+                        @Override
+                        public void onError(Throwable t) {
+                            scheduleReconnect(t.getMessage());
+                        }
 
-                    @Override
-                    public void onCompleted() {
-                        // 서버가 정상 종료(재배포 등) — 다시 붙는다
-                        scheduleReconnect("스트림이 서버에서 종료됨");
-                    }
-                });
+                        @Override
+                        public void onCompleted() {
+                            // 서버가 정상 종료(재배포 등) — 다시 붙는다
+                            scheduleReconnect("스트림이 서버에서 종료됨");
+                        }
+                    });
+        } catch (Exception e) {
+            // 호출 자체가 동기적으로 실패하면 옵저버의 onError 가 불리지 않는다.
+            // 여기서 재예약하지 않으면 재연결 루프가 끊겨 영영 구독이 죽는다.
+            scheduleReconnect("구독 요청 실패: " + e.getMessage());
+        }
     }
 
     private void scheduleReconnect(String reason) {
         if (!running.get()) {
             return;
+        }
+
+        // 한동안 정상적으로 붙어 있었다면 이번 끊김은 새로운 장애다 — 1초부터 다시 시작한다.
+        // 이게 없으면 재배포로 백오프가 한 번 올라간 뒤 영영 60초에 고정된다
+        // (failures 는 이벤트가 실제로 도착할 때만 0이 되는데, 프로필 변경은 드물다).
+        if (System.currentTimeMillis() - subscribedAt.get() >= STABLE_CONNECTION_MILLIS) {
+            failures.set(0);
         }
 
         // 1s, 2s, 4s ... 최대 60s
@@ -111,6 +129,11 @@ public class UserChangeSubscriber {
             // 캐시 삭제 실패는 무시한다(best-effort) — TTL이 만료되면 최신 값으로 수렴한다
             log.warn("사용자 캐시 무효화 실패 (userId={}): {}", userId, e.getMessage());
         }
+    }
+
+    /** 재연결을 몇 번 예약했는지 — 테스트에서 재연결 루프가 살아있는지 확인하는 용도. */
+    int reconnectAttempts() {
+        return failures.get();
     }
 
     @PreDestroy
