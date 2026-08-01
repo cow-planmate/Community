@@ -44,7 +44,13 @@ services:
       #       /opt/planmate-v2/.env 에 REDIS_PASSWORD 가 있으면 그 값이 새어들어와,
       #       비밀번호가 없는 redis-community 에 AUTH 를 시도하다 기동이 깨진다.
       REDIS_PASSWORD: ""
-      # JWT: v2 페어링 (raw UTF-8). v2 .env의 JWT_SECRET 그대로 공유
+      # JWT: v2 가 RS256 으로 서명하고 공개키를 JWKS 로 게시한다. 컨테이너 간 직접
+      # 조회라 nginx 노출이 필요 없다. 못 받아오면 RS256 토큰은 거부되고(검증할 수
+      # 없는 토큰을 통과시키지 않는다) 아래 대칭키 경로만 남는다.
+      MAIN_BACKEND_JWKS: http://planmate-app:8080/.well-known/jwks.json
+      # 아래 둘은 전환 기간 전용이다. v2 가 RS256 으로 넘어간 뒤 access 토큰 수명(15분)이
+      # 지나면 이 두 줄을 지운다 — 그때부터 이 서비스는 공개키만 갖고, 토큰을 위조할
+      # 수단이 사라진다. 그게 이 전환의 목적이다.
       JWT_SECRET: ${JWT_SECRET}
       JWT_SECRET_ENCODING: raw
       # 내부 유저 API: v2의 gRPC 서버(9090). 컨테이너 간 통신이라 호스트 publish/nginx 노출 불필요.

@@ -43,6 +43,10 @@ spring:
       max-request-size: 12MB
 
 jwt:
+  # 메인 백엔드의 서명 공개키. 컨테이너 간 직접 조회라 nginx 노출이 필요 없다.
+  jwks-uri: ${MAIN_BACKEND_JWKS:http://localhost:8090/.well-known/jwks.json}
+  # 아래 둘은 전환 기간 전용이다. 메인 백엔드가 RS256 으로 넘어간 뒤 15분(access 토큰 수명)이
+  # 지나면 주입을 끊는다 — 그 시점부터 이 서비스는 공개키만 갖고, 토큰을 위조할 수단이 없다.
   secret: ${JWT_SECRET:bG9jYWwtZGV2LXNlY3JldC1sb2NhbC1kZXYtc2VjcmV0LWxvY2FsLWRldi1zZWNyZXQ=}
   secret-encoding: ${JWT_SECRET_ENCODING:base64}
 
