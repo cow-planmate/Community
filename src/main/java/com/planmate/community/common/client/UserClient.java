@@ -1,16 +1,16 @@
 package com.planmate.community.common.client;
 
-import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import build.buf.gen.planmate.internal.v1.GetUsersRequest;
+import build.buf.gen.planmate.internal.v1.GetUsersResponse;
+import build.buf.gen.planmate.internal.v1.InternalUser;
+import build.buf.gen.planmate.internal.v1.InternalUserServiceGrpc;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.data.redis.connection.RedisStringCommands;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.types.Expiration;
 import org.springframework.stereotype.Component;
-import org.springframework.web.client.RestClient;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -23,42 +23,42 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
 /**
- * 메인 백엔드의 내부 사용자 조회 API 클라이언트.
+ * 메인 백엔드의 내부 사용자 조회 gRPC 클라이언트.
  * Redis 캐시(TTL 10분, MGET/파이프라인 일괄 접근) → 내부 API 순으로 조회하며, 실패 시 빈 결과를 반환한다
  * (호출부는 게시글에 저장된 닉네임 스냅샷으로 fallback).
  *
- * 캐시 키는 메인 백엔드의 CommunityUserCacheEvictor와 맞물린 서비스 간 계약이다 —
- * prefix를 바꾸면 프로필 변경 시 즉시 무효화가 조용히 동작하지 않게 되므로 양쪽을 함께 고쳐야 한다.
+ * 캐시는 이 서비스가 단독으로 소유한다. 프로필이 바뀌면 메인 백엔드가 WatchUserChanges 스트림으로
+ * 알려주고 {@link UserChangeSubscriber}가 여기 키를 지운다 — 알림이 끊겨도 TTL로 수렴하므로
+ * 정합성이 깨지지는 않고 반영만 늦어진다.
  */
 @Slf4j
 @Component
 public class UserClient {
 
-    private static final String CACHE_KEY_PREFIX = "community:user:profile:";
-    private static final String VISIBILITY_CACHE_KEY_PREFIX = "community:user:profile-public:";
+    static final String CACHE_KEY_PREFIX = "community:user:profile:";
+    static final String VISIBILITY_CACHE_KEY_PREFIX = "community:user:profile-public:";
     private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     // 공개 설정을 껐을 때 반영이 10분이나 늦으면 안 되므로 닉네임보다 짧게 캐싱한다
     private static final Duration VISIBILITY_CACHE_TTL = Duration.ofMinutes(1);
+    // 메인 백엔드가 멈춰도 커뮤니티 요청 스레드가 붙잡히지 않도록 호출마다 건다
+    private static final long CALL_TIMEOUT_SECONDS = 2;
 
-    private final RestClient restClient;
+    private final InternalUserServiceGrpc.InternalUserServiceBlockingStub stub;
     private final StringRedisTemplate redisTemplate;
     private final ObjectMapper objectMapper;
-    private final String internalApiToken;
 
     public UserClient(
-            RestClient.Builder restClientBuilder,
+            InternalUserServiceGrpc.InternalUserServiceBlockingStub internalUserBlockingStub,
             StringRedisTemplate redisTemplate,
-            ObjectMapper objectMapper,
-            @Value("${internal.api-base-url}") String apiBaseUrl,
-            @Value("${internal.api-token}") String internalApiToken
+            ObjectMapper objectMapper
     ) {
-        this.restClient = restClientBuilder.baseUrl(apiBaseUrl).build();
+        this.stub = internalUserBlockingStub;
         this.redisTemplate = redisTemplate;
         this.objectMapper = objectMapper;
-        this.internalApiToken = internalApiToken;
     }
 
     public Optional<AuthorProfile> getAuthor(UUID userId) {
@@ -104,32 +104,30 @@ public class UserClient {
             return "1".equals(cached);
         }
 
-        InternalUserResponse user = fetchUsers(List.of(userId)).get(userId);
+        InternalUser user = fetchUsers(List.of(userId)).get(userId);
         if (user == null) {
             // 조회 실패/사용자 없음 — 캐싱하지 않고(다음 요청에서 재시도) 비공개로 처리한다
             return false;
         }
 
-        writeVisibilityCache(userId, user.profilePublic());
-        return user.profilePublic();
+        writeVisibilityCache(userId, user.getProfilePublic());
+        return user.getProfilePublic();
     }
 
-    private Map<UUID, InternalUserResponse> fetchUsers(List<UUID> userIds) {
-        String ids = userIds.stream().map(UUID::toString).collect(Collectors.joining(","));
+    private Map<UUID, InternalUser> fetchUsers(List<UUID> userIds) {
+        GetUsersRequest request = GetUsersRequest.newBuilder()
+                .addAllUserIds(userIds.stream().map(UUID::toString).toList())
+                .build();
         try {
-            List<InternalUserResponse> users = restClient.get()
-                    .uri(uriBuilder -> uriBuilder.path("/api/internal/users").queryParam("ids", ids).build())
-                    .header("X-Internal-Token", internalApiToken)
-                    .retrieve()
-                    .body(new ParameterizedTypeReference<>() {
-                    });
-            if (users == null) {
-                return Map.of();
-            }
-            return users.stream()
-                    .collect(Collectors.toMap(InternalUserResponse::userId, user -> user));
+            // deadline은 반드시 호출 시점에 건다 — 스텁 생성 시 한 번 걸면 곧 만료된 스텁이 된다
+            GetUsersResponse response = stub
+                    .withDeadlineAfter(CALL_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .getUsers(request);
+
+            return response.getUsersList().stream()
+                    .collect(Collectors.toMap(user -> UUID.fromString(user.getUserId()), user -> user));
         } catch (Exception e) {
-            log.warn("내부 사용자 API 호출 실패 (ids={}): {}", ids, e.getMessage());
+            log.warn("내부 사용자 gRPC 호출 실패 (count={}): {}", userIds.size(), e.getMessage());
             return Map.of();
         }
     }
@@ -199,8 +197,20 @@ public class UserClient {
         }
     }
 
-    private AuthorProfile toProfile(InternalUserResponse user) {
-        return new AuthorProfile(user.nickname(), user.profileImageUrl(), user.avatarHash());
+    /**
+     * proto3에는 null이 없어 미등록 값이 빈 문자열로 내려온다.
+     * AuthorProfile은 "없음"을 null로 표현하므로 여기서 되돌린다 —
+     * 그대로 두면 프론트가 빈 URL로 깨진 이미지를 그리고 이니셜 fallback이 동작하지 않는다.
+     */
+    private AuthorProfile toProfile(InternalUser user) {
+        return new AuthorProfile(
+                user.getNickname(),
+                emptyToNull(user.getProfileImageUrl()),
+                emptyToNull(user.getAvatarHash()));
+    }
+
+    private static String emptyToNull(String value) {
+        return value.isEmpty() ? null : value;
     }
 
     private String serialize(AuthorProfile profile) {
@@ -223,15 +233,5 @@ public class UserClient {
             log.warn("작성자 프로필 역직렬화 실패: {}", e.getMessage());
             return null;
         }
-    }
-
-    @JsonIgnoreProperties(ignoreUnknown = true)
-    private record InternalUserResponse(
-            UUID userId,
-            String nickname,
-            boolean profilePublic,
-            String profileImageUrl,
-            String avatarHash
-    ) {
     }
 }

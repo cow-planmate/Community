@@ -47,8 +47,14 @@ jwt:
   secret-encoding: ${JWT_SECRET_ENCODING:base64}
 
 internal:
-  api-base-url: ${MAIN_BACKEND_URL:http://localhost:8080}
   api-token: ${INTERNAL_API_TOKEN:local-internal-token}
+
+# 메인 백엔드(Backend-v2)의 내부 gRPC 서비스. 컨테이너 간 내부 통신이라 평문을 쓴다.
+grpc:
+  client:
+    internal-user:
+      address: ${MAIN_BACKEND_GRPC:static://localhost:9090}
+      negotiation-type: plaintext
 
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}

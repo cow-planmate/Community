@@ -25,8 +25,10 @@ services:
       # JWT: v2 페어링 (raw UTF-8). v2 .env의 JWT_SECRET 그대로 공유
       JWT_SECRET: ${JWT_SECRET}
       JWT_SECRET_ENCODING: raw
-      # 내부 유저 API: v2에 아직 미포팅 → 닉네임 최신화는 실패해도 스냅샷으로 읽기 동작(코드 무수정 방침)
-      MAIN_BACKEND_URL: http://planmate-app:8080
+      # 내부 유저 API: v2의 gRPC 서버(9090). 컨테이너 간 통신이라 호스트 publish/nginx 노출 불필요.
+      # 전제: /opt/planmate-v2 의 planmate-app 이 9090 을 열고 있어야 한다.
+      # 붙지 못해도 닉네임은 게시글 스냅샷으로 fallback 하므로 읽기는 계속 동작한다.
+      MAIN_BACKEND_GRPC: static://planmate-app:9090
       INTERNAL_API_TOKEN: local-internal-token
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
       # MINIO: 이 호스트에 없음 → 이미지 업로드만 비활성(기동엔 지장 없음). 필요시 채우기.
