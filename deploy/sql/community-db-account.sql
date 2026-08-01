@@ -5,10 +5,12 @@
 -- 있는 상태였다. 인스턴스를 쪼개는 대신 권한으로 가른다 — 이 규모에서 인스턴스 이중화는
 -- 백업/모니터링 비용만 늘린다.
 --
--- 실행 (planmate-postgres 컨테이너가 있는 호스트에서):
---   docker exec -i planmate-postgres psql -U postgres -v ON_ERROR_STOP=1 \
+-- 실행 (docker53):
+--   docker exec -i planmate-postgres psql -U planmate -v ON_ERROR_STOP=1 \
 --     -v community_password="'실제_비밀번호'" < community-db-account.sql
 --
+--   -U 는 운영의 superuser 롤이다. 이 스택은 postgres 이미지를 POSTGRES_USER=planmate 로
+--   초기화했으므로 'postgres' 가 아니라 'planmate' 다.
 --   비밀번호는 반드시 작은따옴표까지 포함해 넘긴다 (-v 는 문자열 치환이라 따옴표가 필요하다).
 --
 -- 되돌리기는 파일 맨 아래 주석 참고.
@@ -34,12 +36,24 @@ ALTER ROLE community_app WITH LOGIN PASSWORD :community_password;
 -- 준다. 그래서 롤만 만들고 끝내면 community_app 이 planmate2 에 그냥 붙는다 —
 -- "GRANT 를 안 줬으니 못 붙겠지"가 통하지 않는다.
 --
--- Backend-v2 는 superuser 로 붙으므로 이 REVOKE 의 영향을 받지 않는다.
+-- Backend-v2 는 superuser(planmate) 로 붙으므로 이 REVOKE 의 영향을 받지 않는다.
 -- 나중에 v2 도 전용 계정으로 내리면 그 계정에 명시적으로 GRANT 해야 한다.
-REVOKE CONNECT ON DATABASE planmate2 FROM PUBLIC;
-
--- 레거시 DB 도 같이 막는다(현재 v2 가 쓰지 않지만 데이터가 남아 있다).
-REVOKE CONNECT ON DATABASE planmate FROM PUBLIC;
+--
+-- 없는 DB 를 REVOKE 하면 ON_ERROR_STOP 때문에 스크립트가 통째로 중단된다. 운영에는
+-- planmate 만 있고 planmate2 는 로컬에만 있는 식으로 환경마다 다르므로, 있는 것만 처리한다.
+DO $$
+DECLARE db text;
+BEGIN
+    FOREACH db IN ARRAY ARRAY['planmate', 'planmate2'] LOOP
+        IF EXISTS (SELECT 1 FROM pg_database WHERE datname = db) THEN
+            EXECUTE format('REVOKE CONNECT ON DATABASE %I FROM PUBLIC', db);
+            RAISE NOTICE '% : PUBLIC 의 CONNECT 를 회수했다', db;
+        ELSE
+            RAISE NOTICE '% : 없음 — 건너뛴다', db;
+        END IF;
+    END LOOP;
+END
+$$;
 
 -- ── 3. community DB 접근 ─────────────────────────────────────────────────────
 GRANT CONNECT ON DATABASE community TO community_app;
@@ -79,13 +93,15 @@ $$;
 -- ── 4. 확인 ──────────────────────────────────────────────────────────────────
 \echo ''
 \echo '== 확인 =='
-SELECT 'community 접근'      AS check, has_database_privilege('community_app', 'community', 'CONNECT')::text AS result
+SELECT 'community 접근(t 여야 정상)' AS check,
+       has_database_privilege('community_app', 'community', 'CONNECT')::text AS result
 UNION ALL
-SELECT 'planmate2 차단(f 여야 정상)', has_database_privilege('community_app', 'planmate2', 'CONNECT')::text
+SELECT d.datname || ' 차단(f 여야 정상)',
+       has_database_privilege('community_app', d.datname, 'CONNECT')::text
+  FROM pg_database d WHERE d.datname IN ('planmate', 'planmate2')
 UNION ALL
-SELECT 'planmate 차단(f 여야 정상)',  has_database_privilege('community_app', 'planmate',  'CONNECT')::text
-UNION ALL
-SELECT 'community 테이블 소유',       count(*)::text FROM pg_tables WHERE schemaname='public' AND tableowner='community_app';
+SELECT 'community 테이블 소유', count(*)::text
+  FROM pg_tables WHERE schemaname='public' AND tableowner='community_app';
 
 -- ── 되돌리기 ─────────────────────────────────────────────────────────────────
 -- \connect community
