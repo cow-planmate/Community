@@ -203,10 +203,15 @@ public class UserClient {
      * 그대로 두면 프론트가 빈 URL로 깨진 이미지를 그리고 이니셜 fallback이 동작하지 않는다.
      */
     private AuthorProfile toProfile(InternalUser user) {
+        // 탈퇴 계정은 서버가 닉네임·아이콘을 비워 보내므로 그대로 쓰면 이름 없는 작성자가 된다
+        if (user.getDeleted()) {
+            return AuthorProfile.ofDeleted();
+        }
         return new AuthorProfile(
                 user.getNickname(),
                 emptyToNull(user.getProfileImageUrl()),
-                emptyToNull(user.getAvatarHash()));
+                emptyToNull(user.getAvatarHash()),
+                false);
     }
 
     private static String emptyToNull(String value) {

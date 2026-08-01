@@ -36,13 +36,14 @@ public class PostController {
 
     private final PostService postService;
 
-    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다. userId를 주면 해당 사용자가 쓴 글만 조회합니다(프로필용, 다른 필터와 조합 불가). 해당 사용자가 프로필을 비공개로 두면 본인 외에는 403(USER_002)입니다.")
+    @Operation(summary = "게시글 목록 조회", description = "게시판별 게시글 목록을 페이징으로 조회합니다. 검색어(q)와 정렬(latest|likes|views|forks)·정렬방향(order=asc|desc, 기본 desc)을 지원하며, 피드는 지역(region)·기간(minDays~maxDays)·태그(tag) 필터를 추가 지원합니다. userId를 주면 해당 사용자가 쓴 글만 조회합니다(프로필용, 다른 필터와 조합 불가). 해당 사용자가 프로필을 비공개로 두면 본인 외에는 403(USER_002)입니다.")
     @GetMapping
     public ResponseEntity<PageResponse<PostSummaryResponse>> getPosts(
             @RequestParam("category") String category,
             @RequestParam(value = "page", defaultValue = "0") int page,
             @RequestParam(value = "size", defaultValue = "20") int size,
             @RequestParam(value = "sort", defaultValue = "latest") String sort,
+            @RequestParam(value = "order", defaultValue = "desc") String order,
             @RequestParam(value = "q", required = false) String q,
             @RequestParam(value = "region", required = false) String region,
             @RequestParam(value = "minDays", required = false) Integer minDays,
@@ -52,7 +53,7 @@ public class PostController {
             Authentication authentication
     ) {
         UUID viewerId = viewerId(authentication);
-        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, q, region, minDays, maxDays, tag, userId, viewerId));
+        return ResponseEntity.ok(postService.getPosts(category, page, size, sort, order, q, region, minDays, maxDays, tag, userId, viewerId));
     }
 
     @Operation(summary = "지역별 게시글 수 집계", description = "카테고리 내 지역(region)별 게시글 수를 집계합니다.")

@@ -21,6 +21,8 @@ public record PostDetailResponse(
         String authorImage,
         /** 작성자 이메일 해시(Gravatar 식별자). 이메일 원문은 내려오지 않는다 */
         String authorAvatarHash,
+        /** 탈퇴한 사용자. true면 author는 "탈퇴한 사용자"이고 프로필로 이동할 수 없다 */
+        boolean authorDeleted,
         int level,
         int likes,
         int dislikes,
@@ -69,6 +71,7 @@ public record PostDetailResponse(
                 resolved.nickname(),
                 resolved.profileImageUrl(),
                 resolved.avatarHash(),
+                resolved.deleted(),
                 level,
                 post.getLikeCount(),
                 post.getDislikeCount(),
