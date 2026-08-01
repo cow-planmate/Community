@@ -6,8 +6,15 @@
 # 남은 공유 자원은 Postgres 인스턴스(계정까지 공유)와 JWT 대칭키다. 각각 DB 계정 분리와
 # JWT 비대칭 전환으로 끊을 차례이며, 그때까지는 "분리된 서비스"라고 부르기 어렵다.
 #
-# 실행:  docker compose --env-file /opt/planmate-v2/.env -f docker-compose.community.yml up -d
-#   (--env-file 로 POSTGRES_USER/PASSWORD/JWT_SECRET/CORS_ALLOWED_ORIGINS 를 v2 .env에서 그대로 가져옴 → 시크릿 공유)
+# 실행:
+#   docker compose --env-file /opt/planmate-v2/.env \
+#                  --env-file /opt/planmate-community/.env \
+#                  -f docker-compose.community.yml up -d
+#
+#   env-file 두 개를 순서대로 넘긴다. 뒤에 온 파일이 이긴다.
+#     /opt/planmate-v2/.env         아직 공유하는 값(MinIO 자격증명, CORS, JWT_SECRET)
+#     /opt/planmate-community/.env  이 서비스 전용 값(DB 계정) — .env.community.example 참고
+#   전용 값을 뒤에 두는 이유는 공유 파일에 같은 이름의 키가 생겨도 덮이지 않게 하기 위함이다.
 #
 # CI/CD: main push → GitHub Actions 가 cycle123/planmate-community:latest 를 Docker Hub 에 push,
 #        docker53 의 Watchtower(WATCHTOWER_LABEL_ENABLE) 가 아래 라벨을 보고 자동 pull+재기동.
@@ -21,9 +28,13 @@ services:
       - "com.centurylinklabs.watchtower.enable=true"
     environment:
       SERVER_PORT: "8081"
+      # DB: 인스턴스는 v2 와 공유하되 계정을 가른다. 예전에는 ${POSTGRES_USER}(사실상
+      # superuser)를 그대로 썼기 때문에 DB 이름만 다를 뿐 planmate2 를 읽고 쓸 수 있었다.
+      # community_app 은 planmate2 에 CONNECT 자체가 안 된다 — sql/community-db-account.sql 참고.
+      # 자격증명은 /opt/planmate-community/.env 에서 온다(공유 .env 아님).
       SPRING_DATASOURCE_URL: jdbc:postgresql://planmate-postgres:5432/community
-      SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER}
-      SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD}
+      SPRING_DATASOURCE_USERNAME: ${COMMUNITY_DB_USER:-community_app}
+      SPRING_DATASOURCE_PASSWORD: ${COMMUNITY_DB_PASSWORD:?COMMUNITY_DB_PASSWORD 가 필요하다 — /opt/planmate-community/.env 를 --env-file 로 넘겼는지 확인}
       # Redis: 이 서비스 전용(아래 redis-community). 예전에는 v2의 planmate-redis 를
       # 같이 썼는데, 거기엔 SharedSync 협업편집의 presence/history 런타임 상태가 산다.
       # 커뮤니티 캐시 트래픽이 얹히면 eviction 이 그 세션 상태를 날릴 수 있었다.
