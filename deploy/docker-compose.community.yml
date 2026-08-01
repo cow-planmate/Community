@@ -2,9 +2,13 @@
 # 기존 planmate-v2 스택은 건드리지 않고, 같은 네트워크(planmate-v2_default)에 붙여
 # planmate-postgres / planmate-app 를 컨테이너명으로 참조한다.
 #
-# Redis 는 더 이상 공유하지 않는다 — 이 스택이 자기 redis-community 를 띄운다.
-# 남은 공유 자원은 Postgres 인스턴스(계정까지 공유)와 JWT 대칭키다. 각각 DB 계정 분리와
-# JWT 비대칭 전환으로 끊을 차례이며, 그때까지는 "분리된 서비스"라고 부르기 어렵다.
+# 무엇이 갈렸고 무엇이 남았는지:
+#   Redis    분리됨 — 이 스택이 자기 redis-community 를 띄운다.
+#   DB 계정  분리됨 — community_app 은 planmate2 에 CONNECT 자체가 안 된다.
+#   JWT      전환 중 — v2 가 RS256 으로 서명하고 여기는 JWKS 공개키로 검증한다.
+#                      아래 JWT_SECRET 두 줄이 남아 있는 동안은 아직 대칭키를 공유하는
+#                      상태다. 전환이 끝나면 지운다.
+#   남은 공유 자원: Postgres/MinIO 인스턴스 자체, MinIO 루트 자격증명, CORS 설정.
 #
 # 실행:
 #   docker compose --env-file /opt/planmate-v2/.env \
