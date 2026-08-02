@@ -6,8 +6,6 @@ import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.domain.comment.dto.CommentResponse;
 import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
-import com.planmate.community.domain.fork.entity.FeedFork;
-import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
@@ -29,7 +27,6 @@ import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -44,7 +41,6 @@ public class MyActivityService {
     private final CommentRepository commentRepository;
     private final UserStatsRepository userStatsRepository;
     private final ReactionRepository reactionRepository;
-    private final FeedForkRepository feedForkRepository;
     private final UserClient userClient;
     private final PostAssembler postAssembler;
 
@@ -68,26 +64,6 @@ public class MyActivityService {
                 ? postRepository.findLikedByUserId(userId, pageable)
                 : postRepository.findLikedByUserIdAndCategoryIn(userId, categories, pageable);
         return PageResponse.of(posts, withActedAt(posts.getContent(), likedAtByPostId(userId, posts.getContent())));
-    }
-
-    /**
-     * 내가 가져온(포크한) 여행 — 포크 기록을 기준으로 페이징하고 게시글을 배치로 채운다.
-     * 원본이 삭제된 포크는 @SQLRestriction으로 게시글 조회에서 빠지므로 목록에서 제외한다.
-     */
-    public PageResponse<PostSummaryResponse> getForkedPosts(UUID userId, int page, int size) {
-        Page<FeedFork> forks = feedForkRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable(page, size));
-
-        Map<Long, LocalDateTime> forkedAtByPostId = forks.getContent().stream()
-                .collect(Collectors.toMap(FeedFork::getPostId, FeedFork::getCreatedAt));
-        Map<Long, Post> postsById = postRepository.findAllById(forkedAtByPostId.keySet()).stream()
-                .collect(Collectors.toMap(Post::getPostId, post -> post));
-
-        List<Post> posts = forks.getContent().stream()
-                .map(fork -> postsById.get(fork.getPostId()))
-                .filter(Objects::nonNull)
-                .toList();
-
-        return PageResponse.of(forks, withActedAt(posts, forkedAtByPostId));
     }
 
     public PageResponse<CommentResponse> getMyComments(UUID userId, int page, int size) {
