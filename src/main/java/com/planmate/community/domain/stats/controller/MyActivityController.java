@@ -49,17 +49,6 @@ public class MyActivityController {
         return ResponseEntity.ok(myActivityService.getLikedPosts(userId, category, page, size));
     }
 
-    @Operation(summary = "내가 가져온 여행", description = "내가 가져가기(포크)한 피드 게시글을 가져간 시각 최신순으로 조회합니다.")
-    @GetMapping("/forks")
-    public ResponseEntity<PageResponse<PostSummaryResponse>> getForkedPosts(
-            Authentication authentication,
-            @RequestParam(value = "page", defaultValue = "0") int page,
-            @RequestParam(value = "size", defaultValue = "20") int size
-    ) {
-        UUID userId = UUID.fromString(authentication.getName());
-        return ResponseEntity.ok(myActivityService.getForkedPosts(userId, page, size));
-    }
-
     @Operation(summary = "내가 쓴 댓글", description = "내가 작성한 댓글을 최신순으로 조회합니다.")
     @GetMapping("/comments")
     public ResponseEntity<PageResponse<CommentResponse>> getMyComments(

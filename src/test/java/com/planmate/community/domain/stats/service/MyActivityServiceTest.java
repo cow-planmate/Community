@@ -4,8 +4,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.domain.comment.repository.CommentRepository;
-import com.planmate.community.domain.fork.entity.FeedFork;
-import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.entity.Post;
@@ -23,7 +21,6 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
-import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -62,9 +59,6 @@ class MyActivityServiceTest {
     private ReactionRepository reactionRepository;
 
     @Mock
-    private FeedForkRepository feedForkRepository;
-
-    @Mock
     private UserClient userClient;
 
     @Mock
@@ -81,7 +75,7 @@ class MyActivityServiceTest {
                 userClient, userStatsRepository, mateParticipantRepository, new ObjectMapper());
         myActivityService = new MyActivityService(
                 postRepository, commentRepository, userStatsRepository,
-                reactionRepository, feedForkRepository, userClient, postAssembler);
+                reactionRepository, userClient, postAssembler);
     }
 
     private Post feedPost(long postId, String title) {
@@ -97,10 +91,6 @@ class MyActivityServiceTest {
                 .build();
         ReflectionTestUtils.setField(post, "postId", postId);
         return post;
-    }
-
-    private FeedFork fork(long postId, LocalDateTime createdAt) {
-        return FeedFork.builder().postId(postId).userId(userId).createdAt(createdAt).build();
     }
 
     private void stubAssembler() {
@@ -161,41 +151,5 @@ class MyActivityServiceTest {
 
         assertThat(response.items()).singleElement()
                 .extracting(PostSummaryResponse::actedAt).isEqualTo(likedAt);
-    }
-
-    @Test
-    @DisplayName("가져온 여행은 가져간 시각 최신순을 유지하고 actedAt에 그 시각이 담긴다")
-    void getForkedPostsKeepsForkOrder() {
-        stubAssembler();
-        LocalDateTime recent = LocalDateTime.of(2026, 7, 23, 9, 0);
-        LocalDateTime old = LocalDateTime.of(2026, 7, 1, 9, 0);
-        when(feedForkRepository.findByUserIdOrderByCreatedAtDesc(eq(userId), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(fork(2L, recent), fork(1L, old)), PageRequest.of(0, 20), 2));
-        // findAllById의 반환 순서는 보장되지 않는다 — 포크 순서로 다시 정렬되는지 확인한다
-        when(postRepository.findAllById(any()))
-                .thenReturn(List.of(feedPost(1L, "오래 전 여행"), feedPost(2L, "최근 여행")));
-
-        var response = myActivityService.getForkedPosts(userId, 0, 20);
-
-        assertThat(response.items()).extracting(PostSummaryResponse::title)
-                .containsExactly("최근 여행", "오래 전 여행");
-        assertThat(response.items()).extracting(PostSummaryResponse::actedAt)
-                .containsExactly(recent, old);
-    }
-
-    @Test
-    @DisplayName("원본이 삭제된 포크는 가져온 여행 목록에서 빠진다")
-    void getForkedPostsSkipsDeletedPosts() {
-        stubAssembler();
-        when(feedForkRepository.findByUserIdOrderByCreatedAtDesc(eq(userId), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(
-                        List.of(fork(2L, LocalDateTime.now()), fork(1L, LocalDateTime.now().minusDays(1))),
-                        PageRequest.of(0, 20), 2));
-        when(postRepository.findAllById(any())).thenReturn(List.of(feedPost(2L, "남아있는 여행")));
-
-        var response = myActivityService.getForkedPosts(userId, 0, 20);
-
-        assertThat(response.items()).extracting(PostSummaryResponse::title).containsExactly("남아있는 여행");
-        assertThat(response.totalElements()).isEqualTo(2);
     }
 }
