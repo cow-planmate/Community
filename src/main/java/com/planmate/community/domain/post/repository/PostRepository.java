@@ -33,6 +33,31 @@ public interface PostRepository extends JpaRepository<Post, Long> {
             """)
     Page<Post> searchByCategory(@Param("category") Category category, @Param("q") String q, Pageable pageable);
 
+    // 작성자 닉네임까지 포함한 검색. 사용자 복제본(community_user)이 준비된 뒤에만 쓴다 —
+    // 준비 전에는 위 searchByCategory 로 떨어져 제목/본문만 검색한다.
+    //
+    // 조인이 아니라 EXISTS 인 이유:
+    //   1) findLikedByUserId 가 이미 쓰는 이 코드베이스의 관용구다(연관관계가 하나도 없다).
+    //   2) Spring Data 가 count 쿼리를 파생하는데, 조인 형태는 손으로 countQuery 를 써야 할
+    //      가능성이 높고 틀리면 totalPages 가 조용히 어긋난다.
+    //   3) 서브쿼리는 행을 중복시키지 않는다.
+    //
+    // 탈퇴 계정을 제외하는 건 닉네임이 null 이라 어차피 안 걸리기 때문이 아니라,
+    // 의도를 명시하기 위해서다 — "탈퇴자는 이름으로 찾을 수 없다".
+    @Query("""
+            SELECT p FROM Post p
+            WHERE p.category = :category
+              AND (p.title ilike concat('%', cast(:q as string), '%')
+                OR p.contentText ilike concat('%', cast(:q as string), '%')
+                OR EXISTS (SELECT 1 FROM ReplicatedUser u
+                            WHERE u.userId = p.userId
+                              AND u.deleted = FALSE
+                              AND u.nickname ilike concat('%', cast(:q as string), '%')))
+            """)
+    Page<Post> searchByCategoryIncludingAuthor(@Param("category") Category category,
+                                               @Param("q") String q,
+                                               Pageable pageable);
+
     // FEED 목록 필터 — 조건은 전부 null-safe (null이면 미적용)
     // 함수 인자의 cast(... as string)은 필수: 파라미터가 null일 때 PG가 타입을 추론하지 못해 bytea로 간주한다
     @Query("""

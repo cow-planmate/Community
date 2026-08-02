@@ -3,14 +3,15 @@ package com.planmate.community.common.client;
 import build.buf.gen.planmate.internal.v1.InternalUserServiceGrpc;
 import build.buf.gen.planmate.internal.v1.WatchUserChangesRequest;
 import build.buf.gen.planmate.internal.v1.WatchUserChangesResponse;
+import com.planmate.community.common.user.UserProjectionService;
 import io.grpc.stub.StreamObserver;
 import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
@@ -20,13 +21,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
- * 메인 백엔드의 사용자 프로필 변경 스트림을 구독해 이 서비스의 캐시를 무효화한다.
+ * 메인 백엔드의 사용자 변경 스트림을 구독해 로컬 읽기 모델을 따라잡는다.
  *
- * 예전에는 메인 백엔드가 같은 Redis를 공유한다는 점을 이용해 커뮤니티 소유 키를 직접 지웠다.
- * 이제는 알림만 받고 <b>삭제는 여기서</b> 한다 — 그래야 두 서비스의 Redis를 분리할 수 있다.
+ * 예전에는 이 스트림이 "뭔가 바뀌었다" 알림이었고, 놓친 이벤트는 Redis 캐시 TTL로 수렴했다.
+ * 이제는 복제 테이블을 채우므로 수렴시켜 줄 TTL이 없다 — 대신 커서를 들고 재연결해서
+ * 빈 구간을 서버가 재생해 준다.
  *
- * 스트림이 끊긴 동안에는 캐시 TTL(10분/1분)로 수렴하므로 정합성이 깨지지는 않고 반영만 늦어진다.
- * 따라서 재연결 실패는 경고만 남기고 서비스 기동/운영을 막지 않는다.
+ * 따라서 스트림이 끊겨도, 재배포로 서버가 재시작해도(Watchtower가 두 이미지를 따로 갱신하므로
+ * 흔한 일이다) 유실이 없다. 반영만 늦어질 뿐이다.
  */
 @Slf4j
 @Component
@@ -36,9 +38,12 @@ public class UserChangeSubscriber {
     private static final long MAX_BACKOFF_SECONDS = 60;
     // 이 시간 이상 붙어 있었으면 "정상 연결이었다"고 보고 백오프를 처음으로 되돌린다
     private static final long STABLE_CONNECTION_MILLIS = 60_000;
+    // 한 트랜잭션에 묶을 최대 건수. 크면 초기 백필의 트랜잭션 수가 줄고, 작으면 실패 시
+    // 다시 받아야 하는 구간이 짧아진다.
+    private static final int BATCH_SIZE = 200;
 
     private final InternalUserServiceGrpc.InternalUserServiceStub asyncStub;
-    private final StringRedisTemplate redisTemplate;
+    private final UserProjectionService projectionService;
 
     private final ScheduledExecutorService reconnector =
             Executors.newSingleThreadScheduledExecutor(r -> {
@@ -51,13 +56,13 @@ public class UserChangeSubscriber {
     private final AtomicLong subscribedAt = new AtomicLong();
 
     public UserChangeSubscriber(InternalUserServiceGrpc.InternalUserServiceStub internalUserAsyncStub,
-                                StringRedisTemplate redisTemplate) {
+                                UserProjectionService projectionService) {
         this.asyncStub = internalUserAsyncStub;
-        this.redisTemplate = redisTemplate;
+        this.projectionService = projectionService;
     }
 
     /**
-     * 컨텍스트가 완전히 뜬 뒤에 구독한다. Backend-v2가 아직 안 떠 있어도 백오프 재시도로 붙으므로
+     * 컨텍스트가 완전히 뜬 뒤에 구독한다. 메인 백엔드가 아직 안 떠 있어도 백오프 재시도로 붙으므로
      * 기동 순서에 의존하지 않는다(Watchtower가 두 이미지를 따로 갱신한다).
      */
     @EventListener(ApplicationReadyEvent.class)
@@ -68,29 +73,84 @@ public class UserChangeSubscriber {
 
         subscribedAt.set(System.currentTimeMillis());
         try {
-            asyncStub.watchUserChanges(WatchUserChangesRequest.getDefaultInstance(),
-                    new StreamObserver<>() {
-                        @Override
-                        public void onNext(WatchUserChangesResponse event) {
-                            failures.set(0);
-                            evict(event.getUserId());
-                        }
+            // 커서를 실어 보낸다. 스냅샷이 아직 안 끝났으면 0 — 서버가 전체 스냅샷으로 응답한다.
+            // 커서가 서버 보존 기간 밖이면 서버가 알아서 스냅샷으로 격하시킨다.
+            long cursor = projectionService.resumeCursor();
+            WatchUserChangesRequest request = WatchUserChangesRequest.newBuilder()
+                    .setFromSequence(cursor)
+                    .build();
 
-                        @Override
-                        public void onError(Throwable t) {
-                            scheduleReconnect(t.getMessage());
-                        }
-
-                        @Override
-                        public void onCompleted() {
-                            // 서버가 정상 종료(재배포 등) — 다시 붙는다
-                            scheduleReconnect("스트림이 서버에서 종료됨");
-                        }
-                    });
+            asyncStub.watchUserChanges(request, new ProjectionObserver());
         } catch (Exception e) {
             // 호출 자체가 동기적으로 실패하면 옵저버의 onError 가 불리지 않는다.
             // 여기서 재예약하지 않으면 재연결 루프가 끊겨 영영 구독이 죽는다.
             scheduleReconnect("구독 요청 실패: " + e.getMessage());
+        }
+    }
+
+    /**
+     * 스트림 콜백. DB 작업을 이 스레드에서 그대로 한다.
+     *
+     * 별도 큐로 넘기면 서버의 흐름 제어가 무력화된다. 서버는 이쪽이 받을 수 있을 때만 다음
+     * 배치를 보내도록 설계돼 있는데, 무제한 큐를 두면 "받았다"고 거짓 신호를 주게 되고
+     * 초기 백필에서 힙이 찬다.
+     */
+    private final class ProjectionObserver implements StreamObserver<WatchUserChangesResponse> {
+
+        private final List<WatchUserChangesResponse> buffer = new ArrayList<>(BATCH_SIZE);
+        /** 스냅샷 단계에서는 커서를 올리지 않는다 — completeSnapshot 이 확정한다. */
+        private boolean snapshotPhase = !projectionService.isReady();
+
+        @Override
+        public void onNext(WatchUserChangesResponse event) {
+            failures.set(0);
+
+            if (event.getSnapshotComplete()) {
+                flush();
+                projectionService.completeSnapshot(event.getSequence());
+                snapshotPhase = false;
+                return;
+            }
+
+            if (!event.hasUser()) {
+                // 구버전 서버라 값이 실려 오지 않는다. 복제본을 채울 수 없으므로 건너뛴다 —
+                // 서버가 갱신되면 커서가 0인 채로 재연결해 전체 스냅샷부터 다시 시작한다.
+                log.debug("값이 없는 변경 알림 — 구버전 메인 백엔드로 보인다 (userId={})", event.getUserId());
+                return;
+            }
+
+            buffer.add(event);
+            if (buffer.size() >= BATCH_SIZE) {
+                flush();
+            }
+        }
+
+        @Override
+        public void onError(Throwable t) {
+            // 반영하지 못한 버퍼는 버린다 — 커서를 올리지 않았으므로 재연결하면 다시 받는다
+            buffer.clear();
+            scheduleReconnect(t.getMessage());
+        }
+
+        @Override
+        public void onCompleted() {
+            // 서버가 정상 종료(재배포 등) — 남은 버퍼를 반영하고 다시 붙는다
+            flush();
+            scheduleReconnect("스트림이 서버에서 종료됨");
+        }
+
+        private void flush() {
+            if (buffer.isEmpty()) {
+                return;
+            }
+            try {
+                projectionService.applyBatch(buffer, !snapshotPhase);
+            } catch (Exception e) {
+                // 커서를 올리지 않았으므로 재연결 시 같은 구간을 다시 받는다 — 유실이 아니다
+                log.warn("사용자 읽기 모델 반영 실패 ({}건): {}", buffer.size(), e.getMessage());
+            } finally {
+                buffer.clear();
+            }
         }
     }
 
@@ -114,20 +174,8 @@ public class UserChangeSubscriber {
         try {
             reconnector.schedule(this::subscribe, delay, TimeUnit.SECONDS);
         } catch (Exception e) {
-            // 종료 중 executor가 이미 닫힌 경우 — 재연결을 포기해도 TTL로 수렴한다
+            // 종료 중 executor가 이미 닫힌 경우 — 재연결을 포기해도 다음 기동에서 커서로 이어받는다
             log.debug("재연결 예약 실패: {}", e.getMessage());
-        }
-    }
-
-    private void evict(String userId) {
-        try {
-            redisTemplate.delete(List.of(
-                    UserClient.CACHE_KEY_PREFIX + userId,
-                    UserClient.VISIBILITY_CACHE_KEY_PREFIX + userId
-            ));
-        } catch (Exception e) {
-            // 캐시 삭제 실패는 무시한다(best-effort) — TTL이 만료되면 최신 값으로 수렴한다
-            log.warn("사용자 캐시 무효화 실패 (userId={}): {}", userId, e.getMessage());
         }
     }
 

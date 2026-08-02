@@ -7,7 +7,7 @@ plugins {
 group = 'com.planmate'
 version = '0.0.1-SNAPSHOT'
 // buf.build/planmate/proto 의 모듈 커밋. **Backend-v2 와 반드시 같은 값이어야 한다.**
-def protoCommit = '20260801140641.955182b73530'
+def protoCommit = '20260802133042.28c8c830142c'
 // BSR 생성 SDK 버전은 <생성 플러그인 버전>.1.<모듈 커밋> 형태라 아티팩트마다 접두사가 다르다.
 def protobufSdkVersion = "35.1.0.1.$protoCommit"
 def grpcSdkVersion = "1.83.1.1.$protoCommit"
@@ -80,11 +80,36 @@ dependencies {
     // gRPC 클라이언트는 in-process 서버를 띄워 테스트한다 (실제 포트 바인딩 불필요)
     testImplementation 'io.grpc:grpc-inprocess'
     testImplementation 'io.grpc:grpc-testing'
+
+    // 실제 PostgreSQL. 사용자 읽기 모델은 네이티브 SQL(ON CONFLICT 업서트, EXISTS 서브쿼리)에
+    // 정합성을 걸고 있어 목으로는 검증이 안 된다 — 업서트 가드가 뒤집혀도, 파생된 count 쿼리가
+    // 어긋나도 목 테스트는 전부 통과한다. H2 도 안 되는 이유는 ON CONFLICT/gin_trgm_ops/
+    // Flyway 마이그레이션이 전부 PG 전용이기 때문이다.
+    testImplementation 'org.springframework.boot:spring-boot-testcontainers'
+    testImplementation 'org.testcontainers:postgresql'
+    testImplementation 'org.testcontainers:junit-jupiter'
+
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
 tasks.named('test') {
     useJUnitPlatform()
+
+    // Testcontainers 가 Docker 데몬에 붙게 만드는 설정. 이게 없으면 컨테이너가 안 떠서
+    // PostgresTestBase 를 쓰는 테스트가 전부 initializationError 로 죽는다.
+    //
+    // 원인: docker-java 는 API 버전을 명시하지 않으면 1.32 로 요청하는데, Docker 25+ 데몬은
+    // 최소 1.44 를 요구해 "client version 1.32 is too old" 로 400 을 준다.
+    // 소켓 접근 자체는 되고 버전 협상만 실패하는 것이라 에러 메시지가 오해를 부른다.
+    //
+    // 실제로 먹히는 건 systemProperty 'api.version' 이다. docker-java 는 설정 키를
+    // api.version 으로 읽고, 환경변수 DOCKER_API_VERSION 은 이 키에 매핑되지 않는다.
+    // DOCKER_HOST 는 환경변수 기반 전략이 먼저 선택되게 해 설정 경로를 일정하게 만든다.
+    // (Gradle 테스트 워커는 쉘 환경을 그대로 물려받지 않으므로 여기서 명시적으로 넘긴다.)
+    //
+    // 다른 소켓 경로나 낮은 데몬을 쓴다면 DOCKER_HOST / DOCKER_API_VERSION 을 내보내 덮어쓴다.
+    environment 'DOCKER_HOST', System.getenv('DOCKER_HOST') ?: 'unix:///var/run/docker.sock'
+    systemProperty 'api.version', System.getenv('DOCKER_API_VERSION') ?: '1.44'
 }
 
 /**

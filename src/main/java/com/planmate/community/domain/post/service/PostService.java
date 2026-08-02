@@ -126,8 +126,13 @@ public class PostService {
         if (category == Category.FEED && (region != null || minDays != null || maxDays != null || tag != null)) {
             return postRepository.findFeedPosts(category, region, minDays, maxDays, tag, q, pageable);
         }
-        return q == null
-                ? postRepository.findByCategory(category, pageable)
+        if (q == null) {
+            return postRepository.findByCategory(category, pageable);
+        }
+        // 작성자 닉네임 검색은 로컬 사용자 복제본이 있어야 가능하다. 아직 초기 복제가 안 끝났으면
+        // 틀린 결과를 주는 대신 조용히 제목/본문 검색으로 떨어진다(예전과 같은 동작).
+        return userClient.isAuthorSearchAvailable()
+                ? postRepository.searchByCategoryIncludingAuthor(category, q, pageable)
                 : postRepository.searchByCategory(category, q, pageable);
     }
 

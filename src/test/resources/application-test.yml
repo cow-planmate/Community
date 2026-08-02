@@ -1,0 +1,22 @@
+# @DataJpaTest + Testcontainers 전용 설정.
+#
+# datasource 는 @ServiceConnection 이 컨테이너에서 주입하므로 여기 두지 않는다.
+# Flyway 는 반드시 켜둔다 — 검증 대상이 마이그레이션이 만든 실제 스키마(ON CONFLICT 대상
+# 유니크 제약, gin_trgm_ops 인덱스, CHECK 제약)이기 때문이다. Hibernate 가 만든 스키마로
+# 돌리면 테스트는 통과하는데 운영에서 깨진다.
+spring:
+  jpa:
+    hibernate:
+      ddl-auto: none
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+
+logging:
+  level:
+    org.hibernate: WARN
+    org.testcontainers: WARN
+    com.zaxxer.hikari: WARN
