@@ -7,6 +7,11 @@ spring:
   main:
     web-application-type: servlet
 
+  autoconfigure:
+    # management.server.port 분리 시 자동으로 붙는 Basic Auth 비활성화 — 프로메테우스가
+    # 인증 없이 스크랩하려면 필요하다. 대신 9092는 방화벽/내부망에서만 닿아야 한다.
+    exclude: org.springframework.boot.actuate.autoconfigure.security.servlet.ManagementWebSecurityAutoConfiguration
+
   jackson:
     time-zone: Asia/Seoul
 
@@ -94,15 +99,23 @@ server:
       charset: UTF-8
 
 management:
+  # 별도 포트로 분리 — server.port(8081)의 JWT 인증 필터가 적용되지 않는 독립 서블릿
+  # 컨테이너가 뜬다. 9092는 내부망 전용이라 인증 없이 프로메테우스가 스크랩한다
+  # (spring.autoconfigure.exclude로 자동 Basic Auth도 꺼둠 — Backend-v2 PR #21 참고).
+  server:
+    port: ${MANAGEMENT_SERVER_PORT:9092}
   endpoints:
     web:
       exposure:
-        include: health, info
+        include: health, info, prometheus
   endpoint:
     health:
       probes:
         enabled: true
       show-details: always
+  metrics:
+    tags:
+      application: planmate-community
 
 springdoc:
   swagger-ui:
