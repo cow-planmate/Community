@@ -22,6 +22,17 @@ public interface UserStatsRepository extends JpaRepository<UserStats, UUID> {
             """, nativeQuery = true)
     void upsertCounts(@Param("userId") UUID userId, @Param("postDelta") int postDelta, @Param("commentDelta") int commentDelta);
 
+    /** 받은 좋아요 원자적 증감 (반응 등록/해제 트랜잭션에서 호출) */
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query(value = """
+            INSERT INTO community_user_stats (user_id, post_count, comment_count, received_likes, level, updated_at)
+            VALUES (:userId, 0, 0, GREATEST(:delta, 0), 1, now())
+            ON CONFLICT (user_id) DO UPDATE SET
+                received_likes = GREATEST(community_user_stats.received_likes + :delta, 0),
+                updated_at = now()
+            """, nativeQuery = true)
+    void upsertReceivedLikes(@Param("userId") UUID userId, @Param("delta") int delta);
+
     /** 레벨 재계산 — 점수 = 게시글*3 + 댓글, 구간 [0,10,30,70,150) = Lv1~5 */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """

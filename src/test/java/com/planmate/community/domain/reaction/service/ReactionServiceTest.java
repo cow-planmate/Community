@@ -8,6 +8,7 @@ import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.reaction.entity.Reaction;
 import com.planmate.community.domain.reaction.enums.ReactionType;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
+import com.planmate.community.domain.stats.service.UserStatsService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -34,6 +35,9 @@ class ReactionServiceTest {
     @Mock
     private PostRepository postRepository;
 
+    @Mock
+    private UserStatsService userStatsService;
+
     @InjectMocks
     private ReactionService reactionService;
 
@@ -53,14 +57,15 @@ class ReactionServiceTest {
     @Test
     @DisplayName("반응이 없으면 등록하고 카운터를 증가시킨다")
     void reactNew() {
-        when(postRepository.existsById(1L)).thenReturn(true);
+        Post post = post();
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post()));
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         var response = reactionService.react(userId, 1L, "like");
 
         verify(reactionRepository).save(any(Reaction.class));
         verify(postRepository).addLikeCount(1L, 1);
+        verify(userStatsService).recordLikeReceived(post.getUserId(), 1);
         assertThat(response.myReaction()).isEqualTo("like");
     }
 
@@ -68,14 +73,15 @@ class ReactionServiceTest {
     @DisplayName("같은 타입을 다시 보내면 해제(토글)된다")
     void reactToggleOff() {
         Reaction existing = Reaction.builder().postId(1L).userId(userId).type(ReactionType.LIKE).build();
-        when(postRepository.existsById(1L)).thenReturn(true);
+        Post post = post();
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.of(existing));
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post()));
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         var response = reactionService.react(userId, 1L, "like");
 
         verify(reactionRepository).delete(existing);
         verify(postRepository).addLikeCount(1L, -1);
+        verify(userStatsService).recordLikeReceived(post.getUserId(), -1);
         assertThat(response.myReaction()).isNull();
     }
 
@@ -83,14 +89,15 @@ class ReactionServiceTest {
     @DisplayName("다른 타입이면 전환되어 양쪽 카운터가 조정된다")
     void reactSwitch() {
         Reaction existing = Reaction.builder().postId(1L).userId(userId).type(ReactionType.LIKE).build();
-        when(postRepository.existsById(1L)).thenReturn(true);
+        Post post = post();
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.of(existing));
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post()));
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         var response = reactionService.react(userId, 1L, "dislike");
 
         verify(postRepository).addLikeCount(1L, -1);
         verify(postRepository).addDislikeCount(1L, 1);
+        verify(userStatsService).recordLikeReceived(post.getUserId(), -1);
         verify(reactionRepository, never()).save(any());
         assertThat(existing.getType()).isEqualTo(ReactionType.DISLIKE);
         assertThat(response.myReaction()).isEqualTo("dislike");
@@ -99,7 +106,7 @@ class ReactionServiceTest {
     @Test
     @DisplayName("존재하지 않는 게시글에 반응하면 POST_NOT_FOUND 예외가 발생한다")
     void reactPostNotFound() {
-        when(postRepository.existsById(99L)).thenReturn(false);
+        when(postRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> reactionService.react(userId, 99L, "like"))
                 .isInstanceOf(CommunityException.class)
