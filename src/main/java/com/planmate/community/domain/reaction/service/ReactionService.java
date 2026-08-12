@@ -8,6 +8,7 @@ import com.planmate.community.domain.reaction.dto.ReactionResponse;
 import com.planmate.community.domain.reaction.entity.Reaction;
 import com.planmate.community.domain.reaction.enums.ReactionType;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
+import com.planmate.community.domain.stats.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,7 @@ public class ReactionService {
 
     private final ReactionRepository reactionRepository;
     private final PostRepository postRepository;
+    private final UserStatsService userStatsService;
 
     /**
      * 반응 등록/토글/전환.
@@ -31,10 +33,11 @@ public class ReactionService {
     @Transactional
     public ReactionResponse react(UUID userId, Long postId, String typeValue) {
         ReactionType type = ReactionType.from(typeValue);
-        ensurePostExists(postId);
+        Post post = findPost(postId);
 
         Optional<Reaction> existing = reactionRepository.findByPostIdAndUserId(postId, userId);
         String myReaction;
+        int likeDelta;
 
         if (existing.isEmpty()) {
             reactionRepository.save(Reaction.builder()
@@ -44,36 +47,51 @@ public class ReactionService {
                     .build());
             addCount(postId, type, 1);
             myReaction = type.toLowerValue();
+            likeDelta = likeDelta(type, 1);
         } else if (existing.get().getType() == type) {
             reactionRepository.delete(existing.get());
             addCount(postId, type, -1);
             myReaction = null;
+            likeDelta = likeDelta(type, -1);
         } else {
             ReactionType previous = existing.get().getType();
             existing.get().changeType(type);
             addCount(postId, previous, -1);
             addCount(postId, type, 1);
             myReaction = type.toLowerValue();
+            likeDelta = likeDelta(previous, -1) + likeDelta(type, 1);
         }
 
+        recordReceivedLikes(post.getUserId(), likeDelta);
         return buildResponse(postId, myReaction);
     }
 
     @Transactional
     public ReactionResponse cancelReaction(UUID userId, Long postId) {
-        ensurePostExists(postId);
+        Post post = findPost(postId);
 
         reactionRepository.findByPostIdAndUserId(postId, userId).ifPresent(reaction -> {
             reactionRepository.delete(reaction);
             addCount(postId, reaction.getType(), -1);
+            recordReceivedLikes(post.getUserId(), likeDelta(reaction.getType(), -1));
         });
 
         return buildResponse(postId, null);
     }
 
-    private void ensurePostExists(Long postId) {
-        if (!postRepository.existsById(postId)) {
-            throw new CommunityException(ErrorCode.POST_NOT_FOUND);
+    private Post findPost(Long postId) {
+        return postRepository.findById(postId)
+                .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
+    }
+
+    // 작성자의 "받은 좋아요"는 like 에만 반응한다 (dislike 는 집계 대상이 아니다)
+    private static int likeDelta(ReactionType type, int delta) {
+        return type == ReactionType.LIKE ? delta : 0;
+    }
+
+    private void recordReceivedLikes(UUID authorId, int delta) {
+        if (delta != 0) {
+            userStatsService.recordLikeReceived(authorId, delta);
         }
     }
 

@@ -122,6 +122,16 @@ public interface PostRepository extends JpaRepository<Post, Long> {
                                               @Param("categories") Collection<Category> categories,
                                               Pageable pageable);
 
+    // ── 뱃지 집계 (삭제된 글은 @SQLRestriction으로 자동 제외된다) ──────────
+    long countByUserIdAndCategory(UUID userId, Category category);
+
+    /** 여행기를 쓴 서로 다른 지역 수 */
+    @Query("""
+            SELECT COUNT(DISTINCT p.region) FROM Post p
+            WHERE p.userId = :userId AND p.category = :category AND p.region IS NOT NULL
+            """)
+    long countDistinctRegionsByUserIdAndCategory(@Param("userId") UUID userId, @Param("category") Category category);
+
     // 카운터는 동시성 안전하게 원자적 UPDATE로 증감한다
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Post p SET p.likeCount = p.likeCount + :delta WHERE p.postId = :postId")

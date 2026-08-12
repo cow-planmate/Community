@@ -39,6 +39,11 @@ public class UserStats {
     @Builder.Default
     private int commentCount = 0;
 
+    /** 내가 쓴 글이 받은 좋아요 총합 — 마이페이지 표시와 베스트 파트너 뱃지가 같이 쓴다 */
+    @Column(name = "received_likes", nullable = false)
+    @Builder.Default
+    private int receivedLikes = 0;
+
     @Column(nullable = false)
     @Builder.Default
     private int level = 1;
