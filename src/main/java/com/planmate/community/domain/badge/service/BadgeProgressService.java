@@ -1,7 +1,10 @@
 package com.planmate.community.domain.badge.service;
 
 import com.planmate.community.domain.badge.enums.BadgeType;
+import com.planmate.community.domain.badge.entity.UserBadgeId;
 import com.planmate.community.domain.badge.repository.UserBadgeRepository;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.stats.entity.UserStats;
@@ -27,6 +30,8 @@ public class BadgeProgressService {
     private final UserBadgeRepository userBadgeRepository;
     private final UserStatsRepository userStatsRepository;
     private final PostRepository postRepository;
+    private final CommunityNotificationFactory notificationFactory;
+    private final NotificationOutboxWriter notificationOutbox;
 
     /** 게시글 작성/삭제 후 — 누적 글 수는 통계에서, 여행기 편수·지역 수는 집계로 얻는다 */
     @Transactional(propagation = Propagation.MANDATORY)
@@ -50,7 +55,12 @@ public class BadgeProgressService {
     }
 
     private void upsert(UUID userId, BadgeType type, long progress) {
+        boolean alreadyEarned = userBadgeRepository.findById(new UserBadgeId(userId, type.code()))
+                .map(badge -> badge.isEarned()).orElse(false);
         userBadgeRepository.upsertProgress(userId, type.code(), progress, type.goal());
+        if (!alreadyEarned && progress >= type.goal()) {
+            notificationOutbox.publish(notificationFactory.badge(userId, type.code(), type.displayName()));
+        }
     }
 
     private long postCount(UUID userId) {

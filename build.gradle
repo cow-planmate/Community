@@ -28,11 +28,20 @@ repositories {
     maven { url 'https://buf.build/gen/maven' }
 }
 
+def localNotificationProto = file('../proto/build/generated/java/build/buf/gen/planmate/notification/v1')
+def notificationProtoSdkVersion = System.getenv('NOTIFICATION_PROTO_SDK_VERSION')
+if (localNotificationProto.exists()) {
+    sourceSets.main.java.srcDir(localNotificationProto)
+}
+
 dependencies {
     // ── 서비스 간 gRPC 계약 (proto / BSR) ──
     implementation platform("io.grpc:grpc-bom:$grpcVersion")
     implementation "build.buf.gen:planmate_proto_protocolbuffers_java:$protobufSdkVersion"
     implementation "build.buf.gen:planmate_proto_grpc_java:$grpcSdkVersion"
+    if (!localNotificationProto.exists() && notificationProtoSdkVersion) {
+        implementation "build.buf.gen:planmate_proto_protocolbuffers_java:$notificationProtoSdkVersion"
+    }
 
     // gRPC 클라이언트 (Backend-v2 내부 사용자 API 호출 + 변경 스트림 구독)
     implementation "net.devh:grpc-client-spring-boot-starter:$grpcStarterVersion"
@@ -54,6 +63,9 @@ dependencies {
 
     // Redis
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+    // Kafka notification outbox publisher
+    implementation 'org.springframework.kafka:spring-kafka'
 
     // Bean Validation
     implementation 'org.springframework.boot:spring-boot-starter-validation'

@@ -2,6 +2,9 @@ package com.planmate.community.domain.participant.service;
 
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.common.client.UserClient;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.participant.entity.MateParticipant;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.entity.Post;
@@ -34,6 +37,9 @@ class MateServiceTest {
 
     @Mock
     private PostRepository postRepository;
+    @Mock private UserClient userClient;
+    @Mock private CommunityNotificationFactory notificationFactory;
+    @Mock private NotificationOutboxWriter notificationOutbox;
 
     @InjectMocks
     private MateService mateService;

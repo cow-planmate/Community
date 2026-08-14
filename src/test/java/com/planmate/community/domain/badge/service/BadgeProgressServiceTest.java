@@ -6,6 +6,8 @@ import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -33,6 +35,8 @@ class BadgeProgressServiceTest {
 
     @Mock
     private PostRepository postRepository;
+    @Mock private CommunityNotificationFactory notificationFactory;
+    @Mock private NotificationOutboxWriter notificationOutbox;
 
     @InjectMocks
     private BadgeProgressService badgeProgressService;

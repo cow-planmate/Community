@@ -41,6 +41,14 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      properties:
+        enable.idempotence: true
+        acks: all
 
   servlet:
     multipart:
@@ -57,6 +65,11 @@ jwt:
 
 internal:
   api-token: ${INTERNAL_API_TOKEN:local-internal-token}
+notification:
+  kafka:
+    topic: ${NOTIFICATION_TOPIC:planmate.notification.requested.v1}
+  outbox:
+    poll-interval-ms: ${NOTIFICATION_OUTBOX_POLL_INTERVAL_MS:500}
 
 # 메인 백엔드(Backend-v2)의 내부 gRPC 서비스. 컨테이너 간 내부 통신이라 평문을 쓴다.
 grpc:

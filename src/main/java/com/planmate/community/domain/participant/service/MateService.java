@@ -1,7 +1,11 @@
 package com.planmate.community.domain.participant.service;
 
+import build.buf.gen.planmate.notification.v1.NotificationType;
+import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.participant.dto.MateParticipationResponse;
 import com.planmate.community.domain.participant.entity.MateParticipant;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
@@ -14,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -23,6 +28,9 @@ public class MateService {
 
     private final MateParticipantRepository mateParticipantRepository;
     private final PostRepository postRepository;
+    private final UserClient userClient;
+    private final CommunityNotificationFactory notificationFactory;
+    private final NotificationOutboxWriter notificationOutbox;
 
     /**
      * 메이트 모집 참여. 정원이 차면 자동으로 모집 마감된다.
@@ -52,6 +60,14 @@ public class MateService {
         long updated = current + 1;
         if (post.getMaxParticipants() != null && updated >= post.getMaxParticipants()) {
             post.changeStatus(MateStatus.CLOSED);
+        }
+        if (!post.getUserId().equals(userId)) {
+            String actorName = userClient.getAuthor(userId).map(profile -> profile.nickname()).orElse("누군가");
+            notificationOutbox.publish(notificationFactory.create(
+                    post.getUserId(), userId, actorName,
+                    NotificationType.NOTIFICATION_TYPE_COMMUNITY_MATE_JOINED,
+                    "POST", postId.toString(), post.getTitle(), "COMMUNITY_POST",
+                    Map.of("postId", postId.toString())));
         }
 
         return buildResponse(post, updated);
