@@ -64,7 +64,8 @@ jwt:
   secret-encoding: ${JWT_SECRET_ENCODING:base64}
 
 internal:
-  api-token: ${INTERNAL_API_TOKEN:local-internal-token}
+  # 기본값 없음 — 미설정이면 InternalTokenGuard 가 기동을 막는다. openssl rand -hex 32
+  api-token: ${INTERNAL_API_TOKEN:}
 notification:
   kafka:
     topic: ${NOTIFICATION_TOPIC:planmate.notification.requested.v1}

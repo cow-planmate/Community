@@ -20,3 +20,7 @@ logging:
     org.hibernate: WARN
     org.testcontainers: WARN
     com.zaxxer.hikari: WARN
+
+# InternalTokenGuard 가 짧거나 빈 토큰이면 기동을 막는다. 운영 값과 무관한 더미.
+internal:
+  api-token: test-internal-token-0123456789abcdef
