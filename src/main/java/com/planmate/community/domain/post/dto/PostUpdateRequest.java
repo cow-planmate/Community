@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
@@ -21,6 +22,13 @@ public record PostUpdateRequest(
         BigDecimal rating,
         Double lat,
         Double lng,
+        String placeAddress,
+        String placePhone,
+        String placeCategory,
+        String placeUrl,
+        /** 장소 목록 — 넘어온 경우에만 통째로 교체한다 (null이면 변경 없음) */
+        @Valid
+        List<RecommendPlace> places,
 
         // MATE 전용 (region은 FEED에서도 사용)
         String region,

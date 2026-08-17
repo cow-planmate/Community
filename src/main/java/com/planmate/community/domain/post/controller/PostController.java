@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.controller;
 
 import com.planmate.community.common.dto.PageResponse;
+import com.planmate.community.domain.post.dto.AdjacentPostsResponse;
 import com.planmate.community.domain.post.dto.AnsweredRequest;
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
@@ -54,6 +55,12 @@ public class PostController {
     ) {
         UUID viewerId = viewerId(authentication);
         return ResponseEntity.ok(postService.getPosts(category, page, size, sort, order, q, region, minDays, maxDays, tag, userId, viewerId));
+    }
+
+    @Operation(summary = "이전/다음 글 조회", description = "같은 게시판에서 이 글의 바로 앞(더 최근)·뒤(더 오래된) 글을 조회합니다. 끝에 닿으면 해당 항목은 null 입니다.")
+    @GetMapping("/{postId}/adjacent")
+    public ResponseEntity<AdjacentPostsResponse> getAdjacentPosts(@PathVariable Long postId) {
+        return ResponseEntity.ok(postService.getAdjacentPosts(postId));
     }
 
     @Operation(summary = "지역별 게시글 수 집계", description = "카테고리 내 지역(region)별 게시글 수를 집계합니다.")

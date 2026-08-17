@@ -35,6 +35,10 @@ spring:
   flyway:
     enabled: true
     baseline-on-migrate: false
+    # DB에는 적용됐는데 이 브랜치에는 파일이 없는 마이그레이션을 검증에서 제외한다.
+    # 브랜치를 오갈 때(예: msa의 V8이 적용된 개발 DB에서 main을 띄울 때) 앱이 아예 안 뜨는 것을 막는다.
+    # 운영은 한 브랜치만 배포되므로 해당 사항이 없다.
+    ignore-migration-patterns: "*:missing"
 
   data:
     redis:

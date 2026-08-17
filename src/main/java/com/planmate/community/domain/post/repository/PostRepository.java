@@ -91,6 +91,13 @@ public interface PostRepository extends JpaRepository<Post, Long> {
 
     List<Post> findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(Category category);
 
+    // 상세 화면의 "이전 글 / 다음 글". 목록 기본 정렬(최신순)과 같은 순서를 써야 하는데,
+    // createdAt 은 같은 초에 여러 건이 들어오면 순서가 흔들려 같은 글을 오갈 수 있다.
+    // postId 는 단조 증가라 순서가 유일하게 정해진다. @SQLRestriction 덕분에 삭제된 글은 자동 제외된다.
+    Optional<Post> findFirstByCategoryAndPostIdGreaterThanOrderByPostIdAsc(Category category, Long postId);
+
+    Optional<Post> findFirstByCategoryAndPostIdLessThanOrderByPostIdDesc(Category category, Long postId);
+
     // 프로필 공개 목록 (다른 사용자의 여행기 등) — 정렬은 Pageable로 지정한다
     Page<Post> findByCategoryAndUserId(Category category, UUID userId, Pageable pageable);
 

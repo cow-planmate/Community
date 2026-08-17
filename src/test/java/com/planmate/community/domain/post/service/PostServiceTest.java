@@ -105,14 +105,16 @@ class PostServiceTest {
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
         return new PostCreateRequest(
                 category, "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                location, rating, null, null, region, maxParticipants,
+                location, rating, null, null, null, null, null, null, null,
+                region, maxParticipants,
                 null, null, null, null);
     }
 
     private PostCreateRequest feedRequest(String region, Integer durationDays, JsonNode itinerary, List<String> tags) {
         return new PostCreateRequest(
                 "feed", "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                null, null, null, null, region, null,
+                null, null, null, null, null, null, null, null, null,
+                region, null,
                 durationDays, itinerary, tags, null);
     }
 
@@ -171,7 +173,7 @@ class PostServiceTest {
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         UUID otherUser = UUID.randomUUID();
-        PostUpdateRequest request = new PostUpdateRequest("새 제목", null, null, null, null, null, null, null, null, null, null, null, null);
+        PostUpdateRequest request = new PostUpdateRequest("새 제목", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> postService.updatePost(otherUser, 1L, request))
                 .isInstanceOf(CommunityException.class)
@@ -426,7 +428,8 @@ class PostServiceTest {
 
         PostCreateRequest request = new PostCreateRequest(
                 "free", "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null,
+                null, null,
                 3, objectMapper.createObjectNode(), List.of("#태그"), UUID.randomUUID());
 
         var response = postService.createPost(userId, request);
