@@ -47,6 +47,12 @@ public record PostDetailResponse(
         String location,
         String rating,
         PostSummaryResponse.Coords coords,
+        String placeAddress,
+        String placePhone,
+        String placeCategory,
+        String placeUrl,
+        /** 글에 담긴 장소 전체. 장소가 하나뿐인 옛 글도 대표 장소 한 건짜리 목록으로 채워 내려간다 */
+        List<RecommendPlace> places,
 
         // FEED 전용 (비-FEED는 null로 응답에서 생략)
         Integer durationDays,
@@ -61,7 +67,8 @@ public record PostDetailResponse(
 ) {
 
     public static PostDetailResponse of(Post post, AuthorProfile author, int level, JsonNode content, String myReaction,
-                                        Integer participants, List<String> tags, JsonNode itinerary, Boolean myFork) {
+                                        Integer participants, List<String> tags, JsonNode itinerary, Boolean myFork,
+                                        List<RecommendPlace> places) {
         AuthorProfile resolved = AuthorProfile.resolve(author, post.getAuthorNickname());
         return new PostDetailResponse(
                 post.getPostId(),
@@ -92,6 +99,11 @@ public record PostDetailResponse(
                 post.getLat() != null && post.getLng() != null
                         ? new PostSummaryResponse.Coords(post.getLat(), post.getLng())
                         : null,
+                post.getPlaceAddress(),
+                post.getPlacePhone(),
+                post.getPlaceCategory(),
+                post.getPlaceUrl(),
+                places,
                 post.getDurationDays(),
                 post.getCategory() == Category.FEED ? post.getForkCount() : null,
                 tags,

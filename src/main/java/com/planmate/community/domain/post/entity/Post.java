@@ -102,6 +102,27 @@ public class Post extends BaseSoftDeleteEntity {
 
     private Double lng;
 
+    /** 카카오 로컬 검색으로 고른 장소의 부가 정보 — 직접 입력한 옛 글은 전부 null이다. */
+    @Column(name = "place_address", length = 255)
+    private String placeAddress;
+
+    @Column(name = "place_phone", length = 32)
+    private String placePhone;
+
+    @Column(name = "place_category", length = 255)
+    private String placeCategory;
+
+    @Column(name = "place_url", length = 512)
+    private String placeUrl;
+
+    /**
+     * 글에 담긴 장소 목록(JSON 배열). 첫 번째가 대표 장소이며 위의 location/lat/lng/place_* 에 미러링돼 있다.
+     * 장소가 하나뿐이던 시절의 옛 글은 null이고, 조회 측에서 대표 장소 한 건으로 취급한다.
+     */
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(columnDefinition = "jsonb")
+    private String places;
+
     // FEED 전용
     @Column(name = "duration_days")
     private Integer durationDays;
@@ -146,7 +167,8 @@ public class Post extends BaseSoftDeleteEntity {
         }
     }
 
-    public void updateRecommendFields(String location, BigDecimal rating, Double lat, Double lng) {
+    public void updateRecommendFields(String location, BigDecimal rating, Double lat, Double lng,
+                                      String placeAddress, String placePhone, String placeCategory, String placeUrl) {
         if (location != null && !location.isBlank()) {
             this.location = location;
         }
@@ -159,6 +181,37 @@ public class Post extends BaseSoftDeleteEntity {
         if (lng != null) {
             this.lng = lng;
         }
+        // 장소를 다시 고르면 부가 정보도 통째로 따라와야 한다. 옛 장소의 전화번호가 남으면 틀린 정보가 된다.
+        if (placeAddress != null) {
+            this.placeAddress = placeAddress;
+            this.placePhone = placePhone;
+            this.placeCategory = placeCategory;
+            this.placeUrl = placeUrl;
+        }
+    }
+
+    /**
+     * 장소 목록 교체. 대표 장소(첫 번째)는 부분 갱신이 아니라 통째로 덮어쓴다 —
+     * 장소를 지우고 다시 고른 뒤 옛 장소의 주소·전화번호가 남으면 그대로 틀린 정보가 되기 때문이다.
+     *
+     * @param places 직렬화된 JSON 배열 (null이면 장소 목록을 비운다)
+     */
+    public void updateRecommendPlaces(String places, RecommendPlaceSnapshot representative) {
+        this.places = places;
+        if (representative != null) {
+            this.location = representative.name();
+            this.lat = representative.lat();
+            this.lng = representative.lng();
+            this.placeAddress = representative.address();
+            this.placePhone = representative.phone();
+            this.placeCategory = representative.category();
+            this.placeUrl = representative.url();
+        }
+    }
+
+    /** 대표 장소 미러링에 필요한 값만 추린 것 — 엔티티가 DTO를 알지 않도록 별도로 둔다 */
+    public record RecommendPlaceSnapshot(String name, String address, String phone, String category, String url,
+                                         Double lat, Double lng) {
     }
 
     public void updateMateFields(String region, Integer maxParticipants) {

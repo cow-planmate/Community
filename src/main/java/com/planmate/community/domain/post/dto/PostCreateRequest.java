@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.dto;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
@@ -29,6 +30,13 @@ public record PostCreateRequest(
         BigDecimal rating,
         Double lat,
         Double lng,
+        String placeAddress,
+        String placePhone,
+        String placeCategory,
+        String placeUrl,
+        /** 글에 담을 장소 목록. 비어 있으면 위의 단일 장소 필드로 한 건짜리 글이 된다 */
+        @Valid
+        List<RecommendPlace> places,
 
         // MATE 전용
         String region,
