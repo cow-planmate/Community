@@ -45,6 +45,23 @@ spring:
       host: ${SPRING_DATA_REDIS_HOST:localhost}
       port: ${SPRING_DATA_REDIS_PORT:6379}
       password: ${REDIS_PASSWORD:}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.ByteArraySerializer
+      properties:
+        enable.idempotence: true
+        acks: all
+
+  # @Scheduled 기본 스레드 풀은 1개다. 알림 outbox 발행기가 Kafka 응답을 건당 최대 10초씩
+  # 동기 대기하므로(NotificationOutboxPublisher), 브로커가 죽으면 한 사이클이 그 스레드를
+  # 수 분간 붙든다. 풀이 1이면 같은 스레드를 쓰는 조회수 flush(ViewCountService, 10초)가
+  # 함께 멈춰 delta 가 Redis 에만 쌓이고 DB 에 반영되지 않는다.
+  task:
+    scheduling:
+      pool:
+        size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:3}
 
   servlet:
     multipart:
@@ -60,7 +77,13 @@ jwt:
   secret-encoding: ${JWT_SECRET_ENCODING:base64}
 
 internal:
-  api-token: ${INTERNAL_API_TOKEN:local-internal-token}
+  # 기본값 없음 — 미설정이면 InternalTokenGuard 가 기동을 막는다. openssl rand -hex 32
+  api-token: ${INTERNAL_API_TOKEN:}
+notification:
+  kafka:
+    topic: ${NOTIFICATION_TOPIC:planmate.notification.requested.v1}
+  outbox:
+    poll-interval-ms: ${NOTIFICATION_OUTBOX_POLL_INTERVAL_MS:500}
 
 # 메인 백엔드(Backend-v2)의 내부 gRPC 서비스. 컨테이너 간 내부 통신이라 평문을 쓴다.
 grpc:

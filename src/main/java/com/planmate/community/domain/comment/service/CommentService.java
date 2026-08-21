@@ -3,6 +3,8 @@ package com.planmate.community.domain.comment.service;
 import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.comment.dto.CommentCreateRequest;
@@ -11,6 +13,8 @@ import com.planmate.community.domain.comment.dto.CommentUpdateRequest;
 import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.entity.Post;
+import build.buf.gen.planmate.notification.v1.NotificationType;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
 import com.planmate.community.domain.stats.service.UserStatsService;
@@ -37,11 +41,14 @@ public class CommentService {
     private final UserStatsRepository userStatsRepository;
     private final UserClient userClient;
     private final UserStatsService userStatsService;
+    private final CommunityNotificationFactory notificationFactory;
+    private final NotificationOutboxWriter notificationOutbox;
 
     @Transactional
     public CommentResponse createComment(UUID userId, Long postId, CommentCreateRequest request) {
-        ensurePostExists(postId);
-        validateParent(postId, request.parentId());
+        Post post = postRepository.findById(postId)
+                .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
+        Comment parent = validateParent(postId, request.parentId());
 
         AuthorProfile author = userClient.getAuthor(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
@@ -57,6 +64,16 @@ public class CommentService {
         Comment saved = commentRepository.save(comment);
         postRepository.addCommentCount(postId, 1);
         userStatsService.recordCommentCreated(userId);
+        UUID recipientId = parent == null ? post.getUserId() : parent.getUserId();
+        if (!recipientId.equals(userId)) {
+            NotificationType type = parent == null
+                    ? NotificationType.NOTIFICATION_TYPE_COMMUNITY_POST_COMMENTED
+                    : NotificationType.NOTIFICATION_TYPE_COMMUNITY_COMMENT_REPLIED;
+            notificationOutbox.publish(notificationFactory.create(
+                    recipientId, userId, author.nickname(), type,
+                    "POST", postId.toString(), post.getTitle(), "COMMUNITY_POST",
+                    Map.of("postId", postId.toString(), "commentId", saved.getCommentId().toString())));
+        }
         return CommentResponse.of(saved, author, findLevel(userId));
     }
 
@@ -120,9 +137,9 @@ public class CommentService {
     }
 
     // 대댓글 생성 검증 — 부모 존재(soft-delete 제외), 같은 게시글, 깊이 1 제한
-    private void validateParent(Long postId, Long parentId) {
+    private Comment validateParent(Long postId, Long parentId) {
         if (parentId == null) {
-            return;
+            return null;
         }
         Comment parent = findComment(parentId);
         if (!parent.getPostId().equals(postId)) {
@@ -131,6 +148,7 @@ public class CommentService {
         if (parent.getParentId() != null) {
             throw new CommunityException(ErrorCode.COMMENT_REPLY_DEPTH_EXCEEDED);
         }
+        return parent;
     }
 
     private void ensurePostExists(Long postId) {

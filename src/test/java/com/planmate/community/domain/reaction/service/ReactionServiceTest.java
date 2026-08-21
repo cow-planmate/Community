@@ -2,6 +2,9 @@ package com.planmate.community.domain.reaction.service;
 
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.common.client.UserClient;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
@@ -37,6 +40,9 @@ class ReactionServiceTest {
 
     @Mock
     private UserStatsService userStatsService;
+    @Mock private UserClient userClient;
+    @Mock private CommunityNotificationFactory notificationFactory;
+    @Mock private NotificationOutboxWriter notificationOutbox;
 
     @InjectMocks
     private ReactionService reactionService;

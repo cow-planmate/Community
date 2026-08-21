@@ -58,8 +58,16 @@ services:
       # 전제: /opt/planmate-v2 의 planmate-app 이 9090 을 열고 있어야 한다.
       # 붙지 못해도 닉네임은 게시글 스냅샷으로 fallback 하므로 읽기는 계속 동작한다.
       MAIN_BACKEND_GRPC: static://planmate-app:9090
-      INTERNAL_API_TOKEN: local-internal-token
+      # 내부 gRPC 사용자 API 의 공유 비밀. 예전에는 여기에 local-internal-token 이 박혀 있었고
+      # 같은 값이 저장소의 application.yml 기본값이기도 해서 사실상 공개된 비밀번호였다.
+      # 이제 앱에 기본값이 없으므로 주입하지 않으면 기동 자체가 실패한다(InternalTokenGuard).
+      # Backend-v2 / Social 과 같은 값이어야 한다 — /opt/planmate-v2/.env 에 둔다.
+      INTERNAL_API_TOKEN: ${INTERNAL_API_TOKEN:?INTERNAL_API_TOKEN 이 필요하다 — openssl rand -hex 32 로 만들어 /opt/planmate-v2/.env 에 넣고 세 서비스에 같은 값을 준다}
       CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS}
+      # 알림 outbox 발행 대상. 브로커는 planmate-notification 스택이 소유한다
+      # (Notification/deploy/docker-compose.notification.yml). 브로커가 없거나 죽어 있어도
+      # 댓글/좋아요/메이트 참여 자체는 성공하고, outbox 행이 미발행으로 남아 복구 후 다시 나간다.
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       # MINIO: 별도 호스트(192.168.0.90)에 있다. 자격증명은 --env-file 로 주입.
       #   ENDPOINT   = 서버→MinIO 내부 통신. 사설 IP 그대로 둔다.
       #   PUBLIC_URL = 브라우저가 이미지를 받아오는 주소. 업로드 시점에 DB에 절대 URL로
@@ -76,8 +84,20 @@ services:
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY}
       MINIO_BUCKET: community
       MINIO_PUBLIC_URL: https://minio.bapdodi.cloud
-    ports:
-      - "8081:8081"
+    # 호스트에 포트를 열지 않는다. 모든 외부 트래픽은 nginx → Gateway(8085) 로만 들어온다
+    # (Gateway/deploy/nginx-gateway.conf). 여기를 열어두면 게이트웨이의 인증·라우팅을
+    # 건너뛰고 이 서비스에 직접 붙을 수 있어서, 게이트웨이가 "유일한 입구"라는 전제가 깨진다.
+    # 디버깅이 필요하면 열지 말고 docker exec 나 docker network 안에서 curl 할 것.
+    # Watchtower 가 이미지를 갈아끼운 뒤 기동에 실패했는지를 컨테이너 상태만으로 알 수 있어야
+    # 한다. 이게 없으면 앱이 죽어도 컨테이너는 Up 으로 보여서, 배포 사고가 사용자 신고로만
+    # 드러난다. 이미지에 curl 이 이미 들어 있다(Dockerfile 의 "헬스체크용 curl").
+    # 관리 포트(9092)는 컨테이너 안에서만 열려 있어 외부 노출과 무관하다.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9092/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks:
       - planmate-v2_default
     depends_on:

@@ -4,11 +4,15 @@ import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.comment.dto.CommentCreateRequest;
 import com.planmate.community.domain.comment.dto.CommentUpdateRequest;
 import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
 import com.planmate.community.domain.stats.service.UserStatsService;
 import org.junit.jupiter.api.DisplayName;
@@ -59,6 +63,10 @@ class CommentServiceTest {
 
     @Mock
     private UserStatsService userStatsService;
+    @Mock
+    private CommunityNotificationFactory notificationFactory;
+    @Mock
+    private NotificationOutboxWriter notificationOutbox;
 
     @InjectMocks
     private CommentService commentService;
@@ -76,10 +84,17 @@ class CommentServiceTest {
         return comment;
     }
 
+    private Post post(long id) {
+        Post post = Post.builder().category(Category.FREE).userId(UUID.randomUUID())
+                .authorNickname("글쓴이").title("제목").content("{}").contentText("본문").build();
+        ReflectionTestUtils.setField(post, "postId", id);
+        return post;
+    }
+
     @Test
     @DisplayName("댓글 작성 시 닉네임 스냅샷 저장과 댓글 수 증가가 수행된다")
     void createComment() {
-        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("댓글러")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
@@ -100,7 +115,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("존재하지 않는 게시글에는 댓글을 달 수 없다")
     void createCommentPostNotFound() {
-        when(postRepository.existsById(99L)).thenReturn(false);
+        when(postRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.createComment(userId, 99L, new CommentCreateRequest("댓글", null)))
                 .isInstanceOf(CommunityException.class)
@@ -147,7 +162,7 @@ class CommentServiceTest {
     @DisplayName("대댓글 작성 시 parentId가 저장된다")
     void createReply() {
         Comment parent = comment(UUID.randomUUID());
-        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(commentRepository.findById(10L)).thenReturn(Optional.of(parent));
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("답글러")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
@@ -167,7 +182,7 @@ class CommentServiceTest {
     @DisplayName("대댓글에는 답글을 달 수 없다 (깊이 1 제한)")
     void createReplyToReplyRejected() {
         Comment parentReply = reply(UUID.randomUUID(), 10L, 11L);
-        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(commentRepository.findById(11L)).thenReturn(Optional.of(parentReply));
 
         assertThatThrownBy(() -> commentService.createComment(userId, 1L, new CommentCreateRequest("깊이2", 11L)))
@@ -180,7 +195,7 @@ class CommentServiceTest {
     @DisplayName("다른 게시글의 댓글을 부모로 지정할 수 없다")
     void createReplyCrossPostRejected() {
         Comment parent = comment(UUID.randomUUID()); // postId=1
-        when(postRepository.existsById(2L)).thenReturn(true);
+        when(postRepository.findById(2L)).thenReturn(Optional.of(post(2L)));
         when(commentRepository.findById(10L)).thenReturn(Optional.of(parent));
 
         assertThatThrownBy(() -> commentService.createComment(userId, 2L, new CommentCreateRequest("교차", 10L)))
@@ -192,7 +207,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("존재하지 않는(또는 삭제된) 부모 댓글에는 답글을 달 수 없다")
     void createReplyParentNotFound() {
-        when(postRepository.existsById(1L)).thenReturn(true);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(commentRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> commentService.createComment(userId, 1L, new CommentCreateRequest("고아", 99L)))

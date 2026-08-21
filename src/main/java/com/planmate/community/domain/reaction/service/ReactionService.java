@@ -1,7 +1,11 @@
 package com.planmate.community.domain.reaction.service;
 
+import build.buf.gen.planmate.notification.v1.NotificationType;
+import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.reaction.dto.ReactionResponse;
@@ -14,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -23,6 +28,9 @@ public class ReactionService {
     private final ReactionRepository reactionRepository;
     private final PostRepository postRepository;
     private final UserStatsService userStatsService;
+    private final UserClient userClient;
+    private final CommunityNotificationFactory notificationFactory;
+    private final NotificationOutboxWriter notificationOutbox;
 
     /**
      * 반응 등록/토글/전환.
@@ -38,6 +46,7 @@ public class ReactionService {
         Optional<Reaction> existing = reactionRepository.findByPostIdAndUserId(postId, userId);
         String myReaction;
         int likeDelta;
+        boolean notifyLike = false;
 
         if (existing.isEmpty()) {
             reactionRepository.save(Reaction.builder()
@@ -48,6 +57,7 @@ public class ReactionService {
             addCount(postId, type, 1);
             myReaction = type.toLowerValue();
             likeDelta = likeDelta(type, 1);
+            notifyLike = type == ReactionType.LIKE;
         } else if (existing.get().getType() == type) {
             reactionRepository.delete(existing.get());
             addCount(postId, type, -1);
@@ -60,9 +70,18 @@ public class ReactionService {
             addCount(postId, type, 1);
             myReaction = type.toLowerValue();
             likeDelta = likeDelta(previous, -1) + likeDelta(type, 1);
+            notifyLike = type == ReactionType.LIKE;
         }
 
         recordReceivedLikes(post.getUserId(), likeDelta);
+        if (notifyLike && !post.getUserId().equals(userId)) {
+            String actorName = userClient.getAuthor(userId).map(profile -> profile.nickname()).orElse("누군가");
+            notificationOutbox.publish(notificationFactory.create(
+                    post.getUserId(), userId, actorName,
+                    NotificationType.NOTIFICATION_TYPE_COMMUNITY_POST_LIKED,
+                    "POST", postId.toString(), post.getTitle(), "COMMUNITY_POST",
+                    Map.of("postId", postId.toString())));
+        }
         return buildResponse(postId, myReaction);
     }
 
