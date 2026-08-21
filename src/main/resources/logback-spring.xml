@@ -1,0 +1,17 @@
+<configuration>
+    <!-- Backend-v2 의 logback-spring.xml 과 같은 패턴이다. trace= 필드가 없으면 MdcLoggingFilter 가
+         MDC 에 넣은 상관관계 ID 가 로그에 찍히지 않아, 필터를 붙인 의미가 없어진다.
+         userId 는 인증 전 요청에서 비므로 :- 로 기본값을 준다. -->
+    <property name="LOG_PATTERN"
+              value="[%d{HH:mm:ss}] [trace=%X{traceId:-} user=%X{userId:-}] %-5level %logger{36} - %msg%n"/>
+
+    <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>${LOG_PATTERN}</pattern>
+        </encoder>
+    </appender>
+
+    <root level="INFO">
+        <appender-ref ref="CONSOLE"/>
+    </root>
+</configuration>

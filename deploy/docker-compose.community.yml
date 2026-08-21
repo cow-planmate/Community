@@ -88,6 +88,16 @@ services:
     # (Gateway/deploy/nginx-gateway.conf). 여기를 열어두면 게이트웨이의 인증·라우팅을
     # 건너뛰고 이 서비스에 직접 붙을 수 있어서, 게이트웨이가 "유일한 입구"라는 전제가 깨진다.
     # 디버깅이 필요하면 열지 말고 docker exec 나 docker network 안에서 curl 할 것.
+    # Watchtower 가 이미지를 갈아끼운 뒤 기동에 실패했는지를 컨테이너 상태만으로 알 수 있어야
+    # 한다. 이게 없으면 앱이 죽어도 컨테이너는 Up 으로 보여서, 배포 사고가 사용자 신고로만
+    # 드러난다. 이미지에 curl 이 이미 들어 있다(Dockerfile 의 "헬스체크용 curl").
+    # 관리 포트(9092)는 컨테이너 안에서만 열려 있어 외부 노출과 무관하다.
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fs http://localhost:9092/actuator/health | grep -q UP"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
     networks:
       - planmate-v2_default
     depends_on:
