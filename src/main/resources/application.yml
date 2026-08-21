@@ -50,6 +50,15 @@ spring:
         enable.idempotence: true
         acks: all
 
+  # @Scheduled 기본 스레드 풀은 1개다. 알림 outbox 발행기가 Kafka 응답을 건당 최대 10초씩
+  # 동기 대기하므로(NotificationOutboxPublisher), 브로커가 죽으면 한 사이클이 그 스레드를
+  # 수 분간 붙든다. 풀이 1이면 같은 스레드를 쓰는 조회수 flush(ViewCountService, 10초)가
+  # 함께 멈춰 delta 가 Redis 에만 쌓이고 DB 에 반영되지 않는다.
+  task:
+    scheduling:
+      pool:
+        size: ${SPRING_TASK_SCHEDULING_POOL_SIZE:3}
+
   servlet:
     multipart:
       max-file-size: 10MB
