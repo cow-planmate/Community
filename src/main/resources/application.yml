@@ -71,10 +71,8 @@ spring:
 jwt:
   # 메인 백엔드의 서명 공개키. 컨테이너 간 직접 조회라 nginx 노출이 필요 없다.
   jwks-uri: ${MAIN_BACKEND_JWKS:http://localhost:8090/.well-known/jwks.json}
-  # HS 대칭키 검증 경로. 운영에서는 2026-08-02 에 주입을 끊었고(compose 참고), 값이 없으면
-  # RS256 으로만 검증한다. 로컬 개발에서 메인 백엔드 없이 토큰을 흉내 낼 때만 쓰인다.
-  secret: ${JWT_SECRET:}
-  secret-encoding: ${JWT_SECRET_ENCODING:base64}
+  # HS 대칭키 검증 경로는 2026-08-22 에 제거했다. 검증만 하는 쪽이 서명까지 할 수 있는 키를
+  # 들고 있으면 서비스가 분리됐다고 할 수 없다 — RS256 전환의 목적이 그것이었다.
 
 internal:
   # 기본값 없음 — 미설정이면 InternalTokenGuard 가 기동을 막는다. openssl rand -hex 32
