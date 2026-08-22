@@ -7,15 +7,9 @@ import io.jsonwebtoken.Header;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.ProtectedHeader;
-import io.jsonwebtoken.io.Decoders;
-import io.jsonwebtoken.security.Keys;
-import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.SecretKey;
-import java.nio.charset.StandardCharsets;
 import java.security.Key;
 import java.util.UUID;
 
@@ -26,46 +20,26 @@ import java.util.UUID;
  * 검증만 하는 쪽이 서명 능력까지 갖지 않는다. 예전에는 같은 HS256 대칭키를 나눠 가져서
  * 이 서비스가 침해당하면 메인 백엔드의 토큰을 위조할 수 있었다.
  *
- * <p>HS256 경로는 <b>전환 기간에만</b> 남긴다. 메인 백엔드가 RS256 으로 넘어가는 시점에
- * 이미 발급된 access 토큰(15분)이 살아 있어서, 이 경로를 먼저 지우면 그만큼 사용자가
- * 로그아웃된다. 배포 후 15분이 지나면 jwt.secret 주입과 함께 제거할 것.
+ * <p>HS256 경로는 2026-08-22 에 걷어냈다. 전환기(2026-08-02)에 이미 발급된 access 토큰이
+ * 소진될 때까지만 필요했던 유예인데, 이 서비스에는 그 뒤로 {@code jwt.secret} 이 주입되지
+ * 않았으므로 실제로는 오래 전부터 죽은 코드였다. 되살리지 말 것 — 대칭키를 다시 들이면
+ * 이 서비스가 메인 백엔드의 토큰을 위조할 수 있게 된다.
  */
 @Slf4j
 @Component
 public class JwtTokenProvider {
 
-    /** 전환 기간 전용 — RS256 전환이 끝나면 이 필드와 함께 제거한다. */
-    @Value("${jwt.secret:}")
-    private String secret;
-
-    @Value("${jwt.secret-encoding:base64}")
-    private String secretEncoding;
-
     private final JwksKeyProvider jwksKeyProvider;
-
-    private SecretKey legacyKey;
 
     public JwtTokenProvider(JwksKeyProvider jwksKeyProvider) {
         this.jwksKeyProvider = jwksKeyProvider;
     }
 
-    @PostConstruct
-    void init() {
-        if (secret == null || secret.isBlank()) {
-            log.info("jwt.secret 이 없다 — RS256(JWKS)으로만 검증한다. 전환 완료 상태.");
-            return;
-        }
-        this.legacyKey = "base64".equals(secretEncoding)
-                ? Keys.hmacShaKeyFor(Decoders.BASE64.decode(secret))
-                : Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
-    }
-
     /**
      * 헤더의 alg 를 보고 검증 키를 고른다.
      *
-     * <p>alg 별로 <b>정해진 타입의 키만</b> 돌려주므로, RS256 토큰을 HS256 으로 바꿔 공개키를
-     * HMAC 비밀키 자리에 밀어 넣는 고전적인 혼동 공격이 성립하지 않는다. 목록에 없는 alg 는
-     * 전부 거부한다 — alg=none 도 여기서 막힌다.
+     * <p>RS 일 때만 JWKS 공개키를 돌려주고 나머지는 전부 거부한다 — HS 로 바꿔 공개키를 HMAC
+     * 비밀키 자리에 밀어 넣는 고전적인 혼동 공격도, alg=none 도 여기서 막힌다.
      */
     private Key resolveKey(Header header) {
         String alg = header.getAlgorithm();
@@ -89,13 +63,7 @@ public class JwtTokenProvider {
             return key;
         }
 
-        // HS256 만 받으면 안 된다 — 발급측 jjwt 가 키 길이에 맞는 알고리즘을 자동으로 고르며,
-        // 현재 공유 secret 으로는 실제로 HS384 가 나온다. HS256 만 통과시키면 전환 기간에
-        // 멀쩡한 기존 토큰이 전부 거부되어 사용자가 로그아웃된다.
-        if (alg.startsWith("HS") && legacyKey != null) {
-            return legacyKey;
-        }
-
+        // RS 가 아니면 전부 거부한다. HS 분기는 전환기 유예였고 이제 없다.
         throw new CommunityException(ErrorCode.UNAUTHORIZED);
     }
 

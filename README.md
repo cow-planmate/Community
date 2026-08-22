@@ -46,7 +46,7 @@ GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <a
 # redis는 로컬 6379 재사용 (없어도 기동됨 — dedupe/캐시만 비활성)
 
 # JWT/MinIO/메인 백엔드 URL은 .env(gitignore)에 두면 bootRun이 자동 주입한다.
-# Backend-v2와 페어링할 때는 JWT_SECRET_ENCODING=raw, MAIN_BACKEND_URL=http://localhost:8090.
+# Backend-v2와 페어링할 때는 MAIN_BACKEND_JWKS=http://localhost:8090/.well-known/jwks.json.
 ./gradlew bootRun             # :8081
 
 # 일회성 오버라이드
@@ -80,11 +80,12 @@ GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <a
 4. **적용**: `kubectl apply -f k8s/` + `Backend/k8s/planmate-ingress.yaml` (경로 `/api/community` 추가본) 재적용.
    `k8s/deployment.yaml`의 `SPRING_DATA_REDIS_HOST`는 클러스터 redis 마스터 Service 이름으로 맞출 것.
 
-## Backend-v2 전환 시 (커뮤니티 코드 변경 0줄)
+## Backend-v2 연동 (전환 완료)
 
-1. `JWT_SECRET` → v2의 `jwt.secret` 값, `JWT_SECRET_ENCODING=raw`
-2. `MAIN_BACKEND_URL` → v2 Service
-3. 내부 사용자 API(`InternalUserController` + `InternalTokenFilter`, ~50줄)를 v2로 포팅
+1. `MAIN_BACKEND_JWKS` → v2의 `/.well-known/jwks.json`. RS256 공개키만 받아 검증한다.
+   대칭키(`JWT_SECRET`) 공유는 2026-08-02 에 끊었고, HS 검증 경로는 2026-08-22 에 코드에서 제거했다.
+2. `MAIN_BACKEND_GRPC` → v2의 gRPC 서버(9090). 내부 사용자 API 는 gRPC 로 옮겼다.
+3. `INTERNAL_API_TOKEN` → v2 와 같은 값. 없거나 유출된 예시 값이면 `InternalTokenGuard` 가 기동을 막는다.
 
 ## 미구현/추후 과제
 
