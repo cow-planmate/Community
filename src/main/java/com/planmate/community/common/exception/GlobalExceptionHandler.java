@@ -7,6 +7,7 @@ import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.util.stream.Collectors;
 
@@ -40,6 +41,16 @@ public class GlobalExceptionHandler {
         return ResponseEntity
                 .status(ErrorCode.INVALID_INPUT.getHttpStatus())
                 .body(ErrorResponse.of(ErrorCode.INVALID_INPUT));
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFoundException(NoResourceFoundException e) {
+        // 매핑되지 않은 경로 - 관리 포트 전용 actuator 경로를 앱 포트로 친 경우 등.
+        // 잡지 않으면 catch-all(Exception.class)로 떨어져 404가 500으로 둔갑한다.
+        log.warn("NoResourceFoundException: {}", e.getMessage());
+        return ResponseEntity
+                .status(ErrorCode.NOT_FOUND.getHttpStatus())
+                .body(ErrorResponse.of(ErrorCode.NOT_FOUND));
     }
 
     @ExceptionHandler(Exception.class)
