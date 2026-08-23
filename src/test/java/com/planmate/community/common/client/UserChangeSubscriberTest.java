@@ -129,6 +129,40 @@ class UserChangeSubscriberTest {
     }
 
     @Test
+    @DisplayName("스트림이 열려 있는 채로도 '따라잡음' 마커를 받으면 반영한다")
+    void appliesOnCatchUpMarkerWithoutStreamEnd() {
+        given(projectionService.isReady()).willReturn(true);
+        subscriber.subscribe();
+        await().atMost(2, TimeUnit.SECONDS).until(() -> !observers.isEmpty());
+
+        StreamObserver<WatchUserChangesResponse> observer = observers.get(0);
+        observer.onNext(change(UUID.randomUUID(), 8L, "바뀐닉"));
+
+        // 아직 마커 전 — BATCH_SIZE(200)에 한참 못 미치므로 버퍼에 갇혀 있다.
+        verify(projectionService, never()).applyBatch(anyList(), anyBoolean());
+
+        // 서버가 "여기까지가 끝"이라고 알린다. userId 없이 sequence 만 실려 온다.
+        observer.onNext(WatchUserChangesResponse.newBuilder().setSequence(8L).build());
+
+        // onCompleted() 를 부르지 않는다 — 운영에서는 스트림이 몇 시간씩 열려 있다.
+        // 이 검증이 없으면 "1건 바뀌었는데 199건을 더 기다리는" 상태를 아무도 못 잡는다.
+        verify(projectionService, timeout(2000)).applyBatch(anyList(), eq(true));
+    }
+
+    @Test
+    @DisplayName("보낼 게 없어 마커만 온 경우에는 아무것도 반영하지 않는다")
+    void ignoresCatchUpMarkerWithEmptyBuffer() {
+        given(projectionService.isReady()).willReturn(true);
+        subscriber.subscribe();
+        await().atMost(2, TimeUnit.SECONDS).until(() -> !observers.isEmpty());
+
+        observers.get(0).onNext(WatchUserChangesResponse.newBuilder().setSequence(8L).build());
+
+        verify(projectionService, never()).applyBatch(anyList(), anyBoolean());
+        verify(projectionService, never()).completeSnapshot(anyLong());
+    }
+
+    @Test
     @DisplayName("스냅샷 도중에는 커서를 올리지 않고, 완료 표시를 받은 시점에만 확정한다")
     void doesNotAdvanceCursorDuringSnapshot() {
         // 아직 초기 복제 전 — 서버가 스냅샷을 보내는 단계다
