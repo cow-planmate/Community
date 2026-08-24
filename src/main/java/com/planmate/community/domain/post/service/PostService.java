@@ -466,9 +466,6 @@ public class PostService {
         if (destinationId == null || !destinationId.isIntegralNumber()) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 plan에는 destinationId가 필요합니다.");
         }
-        if (isBlankText(plan.get("transportationType"))) {
-            throw new CommunityException(ErrorCode.INVALID_INPUT, "일정의 plan에는 transportationType이 필요합니다.");
-        }
         validateNonNegativeCount(plan.get("adultCount"), "adultCount");
         validateNonNegativeCount(plan.get("childCount"), "childCount");
     }
