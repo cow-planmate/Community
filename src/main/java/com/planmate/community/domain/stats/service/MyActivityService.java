@@ -4,9 +4,11 @@ import com.planmate.community.common.client.AuthorProfile;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.dto.PageResponse;
 import com.planmate.community.domain.comment.dto.CommentResponse;
+import com.planmate.community.domain.comment.entity.CommunityComment;
 import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
@@ -51,7 +53,7 @@ public class MyActivityService {
     public PageResponse<PostSummaryResponse> getMyPosts(UUID userId, String categoryValue, int page, int size) {
         Pageable pageable = pageable(page, size);
         List<Category> categories = parseCategories(categoryValue);
-        Page<Post> posts = categories.isEmpty()
+        Page<CommunityPost> posts = categories.isEmpty()
                 ? postRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable)
                 : postRepository.findByUserIdAndCategoryInOrderByCreatedAtDesc(userId, categories, pageable);
         return PageResponse.of(posts, postAssembler.toSummaries(posts.getContent()));
@@ -60,14 +62,14 @@ public class MyActivityService {
     public PageResponse<PostSummaryResponse> getLikedPosts(UUID userId, String categoryValue, int page, int size) {
         Pageable pageable = pageable(page, size);
         List<Category> categories = parseCategories(categoryValue);
-        Page<Post> posts = categories.isEmpty()
+        Page<CommunityPost> posts = categories.isEmpty()
                 ? postRepository.findLikedByUserId(userId, pageable)
                 : postRepository.findLikedByUserIdAndCategoryIn(userId, categories, pageable);
         return PageResponse.of(posts, withActedAt(posts.getContent(), likedAtByPostId(userId, posts.getContent())));
     }
 
     public PageResponse<CommentResponse> getMyComments(UUID userId, int page, int size) {
-        Page<Comment> comments = commentRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable(page, size));
+        Page<CommunityComment> comments = commentRepository.findByUserIdOrderByCreatedAtDesc(userId, pageable(page, size));
 
         AuthorProfile author = userClient.getAuthor(userId).orElse(null);
         int level = userStatsRepository.findById(userId).map(UserStats::getLevel).orElse(1);
@@ -88,7 +90,7 @@ public class MyActivityService {
         return MyStatsResponse.of(userId, userStatsRepository.findById(userId).orElse(null));
     }
 
-    private List<PostSummaryResponse> withActedAt(List<Post> posts, Map<Long, LocalDateTime> actedAtByPostId) {
+    private List<PostSummaryResponse> withActedAt(List<? extends Post> posts, Map<Long, LocalDateTime> actedAtByPostId) {
         return postAssembler.toSummaries(posts).stream()
                 .map(summary -> summary.withActedAt(actedAtByPostId.get(summary.id())))
                 .toList();
@@ -107,7 +109,7 @@ public class MyActivityService {
                 .toList();
     }
 
-    private Map<Long, LocalDateTime> likedAtByPostId(UUID userId, List<Post> posts) {
+    private Map<Long, LocalDateTime> likedAtByPostId(UUID userId, List<? extends Post> posts) {
         if (posts.isEmpty()) {
             return Map.of();
         }

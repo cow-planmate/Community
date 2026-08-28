@@ -18,6 +18,7 @@ import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
 import com.planmate.community.domain.post.dto.RecommendPlace;
 import com.planmate.community.domain.post.dto.RegionCountResponse;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
@@ -88,7 +89,7 @@ public class PostService {
                         writeItinerary(request.itinerary()),
                         request.tags() != null && !request.tags().isEmpty() ? writeJson(request.tags()) : null,
                         request.sourcePlanId())
-                : Post.builder()
+                : CommunityPost.builder()
                 .category(category)
                 .userId(userId)
                 .authorNickname(author.nickname())
@@ -114,7 +115,9 @@ public class PostService {
                 .places(places.isEmpty() ? null : writeJson(places))
                 .build();
 
-        Post saved = post instanceof FeedPost feed ? feedPostRepository.save(feed) : postRepository.save(post);
+        Post saved = post instanceof FeedPost feed
+                ? feedPostRepository.save(feed)
+                : postRepository.save((CommunityPost) post);
         userStatsService.recordPostCreated(userId);
         return postAssembler.toDetail(saved, null, null);
     }
@@ -160,14 +163,14 @@ public class PostService {
                     : feedPostRepository.findFeedPosts(normalizeBlank(region), minDays, maxDays, normalizeBlank(tag), normalizeBlank(q), pageable);
             return PageResponse.of(feeds, postAssembler.toSummaries(new ArrayList<>(feeds.getContent())));
         }
-        Page<Post> posts = userId != null
+        Page<CommunityPost> posts = userId != null
                 ? postRepository.findByCategoryAndUserId(category, userId, pageable)
                 : findPostsPage(category, normalizeBlank(q), pageable);
         return PageResponse.of(posts, postAssembler.toSummaries(posts.getContent()));
     }
 
     // FEED에 피드 필터가 하나라도 있으면 전용 쿼리로, 아니면 기존 조회/검색 쿼리로 라우팅한다
-    private Page<Post> findPostsPage(Category category, String q, Pageable pageable) {
+    private Page<CommunityPost> findPostsPage(Category category, String q, Pageable pageable) {
         if (q == null) {
             return postRepository.findByCategory(category, pageable);
         }

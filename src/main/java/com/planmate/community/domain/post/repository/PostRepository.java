@@ -1,6 +1,6 @@
 package com.planmate.community.domain.post.repository;
 
-import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.enums.Category;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.domain.Page;
@@ -16,25 +16,23 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface PostRepository extends JpaRepository<Post, Long> {
+public interface PostRepository extends JpaRepository<CommunityPost, Long> {
 
-    @Query("SELECT p FROM Post p WHERE TYPE(p) = Post AND p.postId = :postId")
-    Optional<Post> findCommunityById(@Param("postId") Long postId);
 
-    Page<Post> findByCategory(Category category, Pageable pageable);
+    Page<CommunityPost> findByCategory(Category category, Pageable pageable);
 
     // MATE 참여 등 "정원 검사 → 저장"의 원자성을 위해 게시글 행을 잠근다 (동시 참여 직렬화)
     @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("SELECT p FROM Post p WHERE p.postId = :postId")
-    Optional<Post> findByIdForUpdate(@Param("postId") Long postId);
+    @Query("SELECT p FROM CommunityPost p WHERE p.postId = :postId")
+    Optional<CommunityPost> findByIdForUpdate(@Param("postId") Long postId);
 
     @Query("""
-            SELECT p FROM Post p
+            SELECT p FROM CommunityPost p
             WHERE p.category = :category
               AND (p.title ilike concat('%', :q, '%')
                 OR p.contentText ilike concat('%', :q, '%'))
             """)
-    Page<Post> searchByCategory(@Param("category") Category category, @Param("q") String q, Pageable pageable);
+    Page<CommunityPost> searchByCategory(@Param("category") Category category, @Param("q") String q, Pageable pageable);
 
     // 작성자 닉네임까지 포함한 검색. 사용자 복제본(community_user)이 준비된 뒤에만 쓴다 —
     // 준비 전에는 위 searchByCategory 로 떨어져 제목/본문만 검색한다.
@@ -48,7 +46,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     // 탈퇴 계정을 제외하는 건 닉네임이 null 이라 어차피 안 걸리기 때문이 아니라,
     // 의도를 명시하기 위해서다 — "탈퇴자는 이름으로 찾을 수 없다".
     @Query("""
-            SELECT p FROM Post p
+            SELECT p FROM CommunityPost p
             WHERE p.category = :category
               AND (p.title ilike concat('%', cast(:q as string), '%')
                 OR p.contentText ilike concat('%', cast(:q as string), '%')
@@ -57,75 +55,75 @@ public interface PostRepository extends JpaRepository<Post, Long> {
                               AND u.deleted = FALSE
                               AND u.nickname ilike concat('%', cast(:q as string), '%')))
             """)
-    Page<Post> searchByCategoryIncludingAuthor(@Param("category") Category category,
+    Page<CommunityPost> searchByCategoryIncludingAuthor(@Param("category") Category category,
                                                @Param("q") String q,
                                                Pageable pageable);
 
     // 지역별 게시글 수 집계 (피드는 FeedPostRepository.countRegions 가 따로 있다)
     @Query("""
             SELECT p.region AS region, COUNT(p) AS postCount
-            FROM Post p
+            FROM CommunityPost p
             WHERE p.category = :category AND p.region IS NOT NULL
             GROUP BY p.region
             ORDER BY COUNT(p) DESC, p.region ASC
             """)
     List<RegionCount> countRegionsByCategory(@Param("category") Category category);
 
-    List<Post> findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(Category category);
+    List<CommunityPost> findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(Category category);
 
     // 상세 화면의 "이전 글 / 다음 글". 목록 기본 정렬(최신순)과 같은 순서를 써야 하는데,
     // createdAt 은 같은 초에 여러 건이 들어오면 순서가 흔들려 같은 글을 오갈 수 있다.
     // postId 는 단조 증가라 순서가 유일하게 정해진다. @SQLRestriction 덕분에 삭제된 글은 자동 제외된다.
-    Optional<Post> findFirstByCategoryAndPostIdGreaterThanOrderByPostIdAsc(Category category, Long postId);
+    Optional<CommunityPost> findFirstByCategoryAndPostIdGreaterThanOrderByPostIdAsc(Category category, Long postId);
 
-    Optional<Post> findFirstByCategoryAndPostIdLessThanOrderByPostIdDesc(Category category, Long postId);
+    Optional<CommunityPost> findFirstByCategoryAndPostIdLessThanOrderByPostIdDesc(Category category, Long postId);
 
     // 프로필 공개 목록 (다른 사용자의 여행기 등) — 정렬은 Pageable로 지정한다
-    Page<Post> findByCategoryAndUserId(Category category, UUID userId, Pageable pageable);
+    Page<CommunityPost> findByCategoryAndUserId(Category category, UUID userId, Pageable pageable);
 
-    Page<Post> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
+    Page<CommunityPost> findByUserIdOrderByCreatedAtDesc(UUID userId, Pageable pageable);
 
-    Page<Post> findByUserIdAndCategoryInOrderByCreatedAtDesc(UUID userId, Collection<Category> categories, Pageable pageable);
+    Page<CommunityPost> findByUserIdAndCategoryInOrderByCreatedAtDesc(UUID userId, Collection<Category> categories, Pageable pageable);
 
     @Query("""
-            SELECT p FROM Post p
+            SELECT p FROM CommunityPost p
             WHERE p.postId IN (
-                SELECT r.postId FROM Reaction r
+                SELECT r.postId FROM CommunityReaction r
                 WHERE r.userId = :userId AND r.type = com.planmate.community.domain.reaction.enums.ReactionType.LIKE
             )
             ORDER BY p.createdAt DESC
             """)
-    Page<Post> findLikedByUserId(@Param("userId") UUID userId, Pageable pageable);
+    Page<CommunityPost> findLikedByUserId(@Param("userId") UUID userId, Pageable pageable);
 
     // 카테고리 필터는 별도 메서드로 둔다 — 하나의 쿼리에서 :categories를 null 바인딩하면 PG가 타입을 추론하지 못한다
     @Query("""
-            SELECT p FROM Post p
+            SELECT p FROM CommunityPost p
             WHERE p.postId IN (
-                SELECT r.postId FROM Reaction r
+                SELECT r.postId FROM CommunityReaction r
                 WHERE r.userId = :userId AND r.type = com.planmate.community.domain.reaction.enums.ReactionType.LIKE
             )
               AND p.category IN :categories
             ORDER BY p.createdAt DESC
             """)
-    Page<Post> findLikedByUserIdAndCategoryIn(@Param("userId") UUID userId,
+    Page<CommunityPost> findLikedByUserIdAndCategoryIn(@Param("userId") UUID userId,
                                               @Param("categories") Collection<Category> categories,
                                               Pageable pageable);
 
     // 카운터는 동시성 안전하게 원자적 UPDATE로 증감한다
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Post p SET p.likeCount = p.likeCount + :delta WHERE p.postId = :postId")
+    @Query("UPDATE CommunityPost p SET p.likeCount = p.likeCount + :delta WHERE p.postId = :postId")
     void addLikeCount(@Param("postId") Long postId, @Param("delta") int delta);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Post p SET p.dislikeCount = p.dislikeCount + :delta WHERE p.postId = :postId")
+    @Query("UPDATE CommunityPost p SET p.dislikeCount = p.dislikeCount + :delta WHERE p.postId = :postId")
     void addDislikeCount(@Param("postId") Long postId, @Param("delta") int delta);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Post p SET p.commentCount = p.commentCount + :delta WHERE p.postId = :postId")
+    @Query("UPDATE CommunityPost p SET p.commentCount = p.commentCount + :delta WHERE p.postId = :postId")
     void addCommentCount(@Param("postId") Long postId, @Param("delta") int delta);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Post p SET p.viewCount = p.viewCount + :delta WHERE p.postId = :postId")
+    @Query("UPDATE CommunityPost p SET p.viewCount = p.viewCount + :delta WHERE p.postId = :postId")
     void addViewCount(@Param("postId") Long postId, @Param("delta") long delta);
 
     interface RegionCount {

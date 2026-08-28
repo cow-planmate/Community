@@ -8,9 +8,11 @@ import com.planmate.community.common.notification.CommunityNotificationFactory;
 import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.comment.dto.CommentCreateRequest;
 import com.planmate.community.domain.comment.dto.CommentUpdateRequest;
+import com.planmate.community.domain.comment.entity.CommunityComment;
 import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
@@ -73,8 +75,8 @@ class CommentServiceTest {
 
     private final UUID userId = UUID.randomUUID();
 
-    private Comment comment(UUID authorId) {
-        Comment comment = Comment.builder()
+    private CommunityComment comment(UUID authorId) {
+        CommunityComment comment = CommunityComment.builder()
                 .postId(1L)
                 .userId(authorId)
                 .authorNickname("작성자")
@@ -84,8 +86,8 @@ class CommentServiceTest {
         return comment;
     }
 
-    private Post post(long id) {
-        Post post = Post.builder().category(Category.FREE).userId(UUID.randomUUID())
+    private CommunityPost post(long id) {
+        CommunityPost post = CommunityPost.builder().category(Category.FREE).userId(UUID.randomUUID())
                 .authorNickname("글쓴이").title("제목").content("{}").contentText("본문").build();
         ReflectionTestUtils.setField(post, "postId", id);
         return post;
@@ -97,7 +99,7 @@ class CommentServiceTest {
         when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("댓글러")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
-        when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
+        when(commentRepository.save(any(CommunityComment.class))).thenAnswer(invocation -> {
             Comment saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved, "commentId", 10L);
             return saved;
@@ -136,7 +138,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("댓글 삭제 시 soft delete와 댓글 수 감소가 수행된다")
     void deleteComment() {
-        Comment target = comment(userId);
+        CommunityComment target = comment(userId);
         when(commentRepository.findById(10L)).thenReturn(Optional.of(target));
 
         commentService.deleteComment(userId, false, 10L);
@@ -146,8 +148,8 @@ class CommentServiceTest {
         verify(userStatsService).recordCommentDeleted(userId);
     }
 
-    private Comment reply(UUID authorId, Long parentId, Long commentId) {
-        Comment comment = Comment.builder()
+    private CommunityComment reply(UUID authorId, Long parentId, Long commentId) {
+        CommunityComment comment = CommunityComment.builder()
                 .postId(1L)
                 .userId(authorId)
                 .authorNickname("답글러")
@@ -161,12 +163,12 @@ class CommentServiceTest {
     @Test
     @DisplayName("대댓글 작성 시 parentId가 저장된다")
     void createReply() {
-        Comment parent = comment(UUID.randomUUID());
+        CommunityComment parent = comment(UUID.randomUUID());
         when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(commentRepository.findById(10L)).thenReturn(Optional.of(parent));
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("답글러")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
-        when(commentRepository.save(any(Comment.class))).thenAnswer(invocation -> {
+        when(commentRepository.save(any(CommunityComment.class))).thenAnswer(invocation -> {
             Comment saved = invocation.getArgument(0);
             ReflectionTestUtils.setField(saved, "commentId", 11L);
             return saved;
@@ -181,7 +183,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("대댓글에는 답글을 달 수 없다 (깊이 1 제한)")
     void createReplyToReplyRejected() {
-        Comment parentReply = reply(UUID.randomUUID(), 10L, 11L);
+        CommunityComment parentReply = reply(UUID.randomUUID(), 10L, 11L);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post(1L)));
         when(commentRepository.findById(11L)).thenReturn(Optional.of(parentReply));
 
@@ -194,7 +196,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("다른 게시글의 댓글을 부모로 지정할 수 없다")
     void createReplyCrossPostRejected() {
-        Comment parent = comment(UUID.randomUUID()); // postId=1
+        CommunityComment parent = comment(UUID.randomUUID()); // postId=1
         when(postRepository.findById(2L)).thenReturn(Optional.of(post(2L)));
         when(commentRepository.findById(10L)).thenReturn(Optional.of(parent));
 
@@ -221,9 +223,9 @@ class CommentServiceTest {
     void deleteParentCascadesReplies() {
         UUID replyAuthor1 = UUID.randomUUID();
         UUID replyAuthor2 = UUID.randomUUID();
-        Comment parent = comment(userId);
-        Comment reply1 = reply(replyAuthor1, 10L, 11L);
-        Comment reply2 = reply(replyAuthor2, 10L, 12L);
+        CommunityComment parent = comment(userId);
+        CommunityComment reply1 = reply(replyAuthor1, 10L, 11L);
+        CommunityComment reply2 = reply(replyAuthor2, 10L, 12L);
         when(commentRepository.findById(10L)).thenReturn(Optional.of(parent));
         when(commentRepository.findByParentId(10L)).thenReturn(java.util.List.of(reply1, reply2));
 
@@ -241,7 +243,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("대댓글 단독 삭제는 카운트를 1만 차감하고 연쇄 조회를 하지 않는다")
     void deleteReplyOnly() {
-        Comment target = reply(userId, 10L, 11L);
+        CommunityComment target = reply(userId, 10L, 11L);
         when(commentRepository.findById(11L)).thenReturn(Optional.of(target));
 
         commentService.deleteComment(userId, false, 11L);
@@ -255,7 +257,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("댓글 목록에 작성자 프로필 사진과 Gravatar 해시가 함께 실린다")
     void getCommentsIncludesAuthorAvatar() {
-        Comment comment = comment(userId);
+        CommunityComment comment = comment(userId);
         when(postRepository.existsById(1L)).thenReturn(true);
         when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(1L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(comment)));
@@ -274,7 +276,7 @@ class CommentServiceTest {
     @Test
     @DisplayName("작성자 조회에 실패하면 닉네임 스냅샷으로 떨어지고 아이콘 정보는 비워둔다")
     void getCommentsFallsBackToSnapshot() {
-        Comment comment = comment(userId);
+        CommunityComment comment = comment(userId);
         when(postRepository.existsById(1L)).thenReturn(true);
         when(commentRepository.findByPostIdOrderByCreatedAtAsc(eq(1L), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(comment)));

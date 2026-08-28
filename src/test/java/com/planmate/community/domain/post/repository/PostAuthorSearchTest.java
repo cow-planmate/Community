@@ -1,6 +1,7 @@
 package com.planmate.community.domain.post.repository;
 
 import com.planmate.community.common.user.ReplicatedUserRepository;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.support.PostgresTestBase;
@@ -47,7 +48,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
     }
 
     private void givenPost(UUID userId, String authorNickname, String title) {
-        postRepository.save(Post.builder()
+        postRepository.save(CommunityPost.builder()
                 .category(Category.FREE)
                 .userId(userId)
                 .authorNickname(authorNickname)
@@ -63,7 +64,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
         UUID userId = givenUser("김철수");
         givenPost(userId, "김철수", "제목과 본문에는 검색어가 없다");
 
-        Page<Post> page = postRepository.searchByCategoryIncludingAuthor(
+        Page<CommunityPost> page = postRepository.searchByCategoryIncludingAuthor(
                 Category.FREE, "철수", PageRequest.of(0, 10, NEWEST));
 
         assertThat(page.getContent()).hasSize(1);
@@ -76,7 +77,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
         UUID userId = givenUser("무관한닉네임");
         givenPost(userId, "무관한닉네임", "여행 후기입니다");
 
-        Page<Post> page = postRepository.searchByCategoryIncludingAuthor(
+        Page<CommunityPost> page = postRepository.searchByCategoryIncludingAuthor(
                 Category.FREE, "여행", PageRequest.of(0, 10, NEWEST));
 
         assertThat(page.getContent()).hasSize(1);
@@ -93,7 +94,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
         givenPost(other, "전혀다른사람", "안 걸려야 하는 글");
 
         // 페이지 크기를 결과보다 작게 잡아야 count 쿼리가 실제로 따로 실행된다
-        Page<Post> page = postRepository.searchByCategoryIncludingAuthor(
+        Page<CommunityPost> page = postRepository.searchByCategoryIncludingAuthor(
                 Category.FREE, "영희", PageRequest.of(0, 2, NEWEST));
 
         assertThat(page.getContent()).hasSize(2);
@@ -109,7 +110,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
         givenPost(userId, "다작작가", "첫 글");
         givenPost(userId, "다작작가", "두 번째 글");
 
-        Page<Post> page = postRepository.searchByCategoryIncludingAuthor(
+        Page<CommunityPost> page = postRepository.searchByCategoryIncludingAuthor(
                 Category.FREE, "다작", PageRequest.of(0, 10, NEWEST));
 
         // 조인이었다면 작성자당 행이 부풀 수 있다. EXISTS 를 쓰는 이유 중 하나다.
@@ -124,7 +125,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
         // 게시글에는 작성 시점 닉네임 스냅샷이 남아 있지만, 그걸로 찾히면 안 된다
         givenPost(userId, "탈퇴하기전닉", "탈퇴자가 쓴 글");
 
-        Page<Post> page = postRepository.searchByCategoryIncludingAuthor(
+        Page<CommunityPost> page = postRepository.searchByCategoryIncludingAuthor(
                 Category.FREE, "탈퇴하기전닉", PageRequest.of(0, 10, NEWEST));
 
         assertThat(page.getContent()).isEmpty();
@@ -137,7 +138,7 @@ class PostAuthorSearchTest extends PostgresTestBase {
         // 복제본에 행이 없는 사용자(가입 직후 등)
         givenPost(UUID.randomUUID(), "복제안된사람", "제주도 여행기");
 
-        Page<Post> page = postRepository.searchByCategoryIncludingAuthor(
+        Page<CommunityPost> page = postRepository.searchByCategoryIncludingAuthor(
                 Category.FREE, "제주도", PageRequest.of(0, 10, NEWEST));
 
         // EXISTS 를 OR 가 아니라 AND 로 잘못 붙이면 이 글이 통째로 사라진다

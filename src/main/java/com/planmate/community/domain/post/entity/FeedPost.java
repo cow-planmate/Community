@@ -6,6 +6,8 @@ import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
+import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 
@@ -15,7 +17,9 @@ import java.util.UUID;
 @Getter
 @Entity
 @Table(name = "feed_post")
+@SQLRestriction("deleted_at IS NULL")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
+@SuperBuilder
 public class FeedPost extends Post {
 
     @Column(name = "duration_days", nullable = false)

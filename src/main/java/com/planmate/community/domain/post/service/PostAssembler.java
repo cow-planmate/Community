@@ -37,7 +37,7 @@ public class PostAssembler {
     private final MateParticipantRepository mateParticipantRepository;
     private final ObjectMapper objectMapper;
 
-    public List<PostSummaryResponse> toSummaries(List<Post> posts) {
+    public List<PostSummaryResponse> toSummaries(List<? extends Post> posts) {
         List<UUID> userIds = posts.stream().map(Post::getUserId).distinct().toList();
         Map<UUID, AuthorProfile> authors = userClient.getAuthors(userIds);
         Map<UUID, Integer> levels = findLevels(userIds);
@@ -166,7 +166,7 @@ public class PostAssembler {
                 .collect(Collectors.toMap(UserStats::getUserId, UserStats::getLevel));
     }
 
-    private Map<Long, Integer> findParticipantCounts(List<Post> posts) {
+    private Map<Long, Integer> findParticipantCounts(List<? extends Post> posts) {
         List<Long> matePostIds = posts.stream()
                 .filter(post -> post.getCategory() == Category.MATE)
                 .map(Post::getPostId)

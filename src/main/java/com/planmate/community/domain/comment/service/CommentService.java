@@ -10,6 +10,7 @@ import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.comment.dto.CommentCreateRequest;
 import com.planmate.community.domain.comment.dto.CommentResponse;
 import com.planmate.community.domain.comment.dto.CommentUpdateRequest;
+import com.planmate.community.domain.comment.entity.CommunityComment;
 import com.planmate.community.domain.comment.entity.Comment;
 import com.planmate.community.domain.comment.entity.FeedComment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
@@ -55,9 +56,7 @@ public class CommentService {
         AuthorProfile author = userClient.getAuthor(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
 
-        Comment comment = post instanceof FeedPost
-                ? FeedComment.create(postId, userId, author.nickname(), request.content(), request.parentId())
-                : Comment.builder()
+        CommunityComment comment = CommunityComment.builder()
                 .postId(postId)
                 .userId(userId)
                 .authorNickname(author.nickname())
@@ -65,7 +64,7 @@ public class CommentService {
                 .parentId(request.parentId())
                 .build();
 
-        Comment saved = commentRepository.save(comment);
+        CommunityComment saved = commentRepository.save(comment);
         postRepository.addCommentCount(postId, 1);
         userStatsService.recordCommentCreated(userId);
         UUID recipientId = parent == null ? post.getUserId() : parent.getUserId();
@@ -84,7 +83,7 @@ public class CommentService {
     public PageResponse<CommentResponse> getComments(Long postId, int page, int size) {
         ensurePostExists(postId);
 
-        Page<Comment> comments = commentRepository.findByPostIdOrderByCreatedAtAsc(
+        Page<CommunityComment> comments = commentRepository.findByPostIdOrderByCreatedAtAsc(
                 postId, PageRequest.of(Math.max(page, 0), Math.min(Math.max(size, 1), MAX_PAGE_SIZE)));
 
         List<UUID> userIds = comments.getContent().stream().map(Comment::getUserId).distinct().toList();
@@ -123,7 +122,7 @@ public class CommentService {
         }
 
         // 최상위 댓글이면 살아있는 대댓글도 연쇄 soft-delete (삭제행은 @SQLRestriction으로 숨겨져 대댓글이 고아 노출되는 것을 방지)
-        List<Comment> replies = comment.getParentId() == null
+        List<CommunityComment> replies = comment.getParentId() == null
                 ? commentRepository.findByParentId(comment.getCommentId())
                 : List.of();
 
