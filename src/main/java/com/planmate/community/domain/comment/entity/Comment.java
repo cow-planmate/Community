@@ -6,6 +6,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Inheritance;
+import jakarta.persistence.InheritanceType;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -13,12 +15,17 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Polymorphism;
+import org.hibernate.annotations.PolymorphismType;
 
 import java.util.UUID;
 
 @Getter
 @Entity
 @Table(name = "community_comment")
+@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
+@Polymorphism(type = PolymorphismType.EXPLICIT)
 @SQLRestriction("deleted_at IS NULL")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
@@ -26,7 +33,8 @@ import java.util.UUID;
 public class Comment extends BaseSoftDeleteEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "domain_comment_id")
+    @GenericGenerator(name = "domain_comment_id", type = com.planmate.community.common.persistence.DomainSequenceGenerator.class)
     @Column(name = "comment_id")
     private Long commentId;
 
@@ -48,6 +56,14 @@ public class Comment extends BaseSoftDeleteEntity {
 
     public boolean isAuthor(UUID userId) {
         return this.userId.equals(userId);
+    }
+
+    protected void initialize(Long postId, UUID userId, String authorNickname, String content, Long parentId) {
+        this.postId = postId;
+        this.userId = userId;
+        this.authorNickname = authorNickname;
+        this.content = content;
+        this.parentId = parentId;
     }
 
     public void updateContent(String content) {

@@ -42,6 +42,7 @@ public class SecurityConfig {
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers(SecurityWhitelist.PATHS.toArray(new String[0])).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/community/posts/**").permitAll()
+                        .requestMatchers(HttpMethod.GET, "/api/feed/posts/**").permitAll()
                         .anyRequest().authenticated())
                 .addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(exception -> exception

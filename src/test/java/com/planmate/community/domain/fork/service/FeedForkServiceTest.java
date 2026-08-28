@@ -4,8 +4,9 @@ import com.planmate.community.common.exception.CommunityException;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
-import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -36,7 +37,7 @@ class FeedForkServiceTest {
     private FeedForkRepository feedForkRepository;
 
     @Mock
-    private PostRepository postRepository;
+    private FeedPostRepository postRepository;
 
     @InjectMocks
     private FeedForkService feedForkService;
@@ -44,18 +45,10 @@ class FeedForkServiceTest {
     private final UUID userId = UUID.randomUUID();
     private final UUID authorId = UUID.randomUUID();
 
-    private Post feedPost(int forkCount) {
-        Post post = Post.builder()
-                .category(Category.FEED)
-                .userId(authorId)
-                .authorNickname("작성자")
-                .title("서울 여행")
-                .content("{}")
-                .contentText("본문")
-                .region("서울")
-                .durationDays(3)
-                .forkCount(forkCount)
-                .build();
+    private FeedPost feedPost(int forkCount) {
+        FeedPost post = FeedPost.create(authorId, "작성자", "서울 여행", "{}", "본문", null,
+                "서울", null, null, null, 3, null, null, null);
+        ReflectionTestUtils.setField(post, "forkCount", forkCount);
         ReflectionTestUtils.setField(post, "postId", 1L);
         return post;
     }
@@ -91,17 +84,13 @@ class FeedForkServiceTest {
     }
 
     @Test
-    @DisplayName("피드 게시판이 아닌 글은 가져갈 수 없다")
-    void forkNonFeedPost() {
-        Post post = Post.builder()
-                .category(Category.FREE).userId(authorId).authorNickname("작성자")
-                .title("자유글").content("{}").contentText("본문").build();
-        ReflectionTestUtils.setField(post, "postId", 1L);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+    @DisplayName("존재하지 않는 피드는 가져갈 수 없다")
+    void forkMissingFeedPost() {
+        when(postRepository.findById(1L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> feedForkService.fork(userId, 1L))
                 .isInstanceOf(CommunityException.class)
-                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT));
+                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.POST_NOT_FOUND));
         verify(feedForkRepository, never()).upsertFork(anyLong(), any(), any());
         verify(postRepository, never()).addForkCount(anyLong(), anyInt());
     }

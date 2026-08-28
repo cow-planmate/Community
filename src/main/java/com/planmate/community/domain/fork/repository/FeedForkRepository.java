@@ -15,12 +15,12 @@ public interface FeedForkRepository extends JpaRepository<FeedFork, Long> {
 
     /**
      * 가져가기 기록 UPSERT — 같은 글을 여러 번 가져가도 (post, user)당 1행만 남기고 시각만 갱신한다.
-     * "내가 가져온 여행" 목록의 중복을 막기 위함이며, 가져간 횟수는 community_post.fork_count가 센다.
+     * "내가 가져온 여행" 목록의 중복을 막기 위함이며, 가져간 횟수는 feed_post.fork_count가 센다.
      * select 후 insert로 나누면 동시 요청이 UNIQUE 위반을 일으켜 트랜잭션이 오염되므로 단일 원자 구문으로 처리한다.
      */
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = """
-            INSERT INTO community_feed_fork (post_id, user_id, created_at)
+            INSERT INTO feed_fork (post_id, user_id, created_at)
             VALUES (:postId, :userId, :now)
             ON CONFLICT (post_id, user_id) DO UPDATE SET created_at = EXCLUDED.created_at
             """, nativeQuery = true)

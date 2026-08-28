@@ -19,7 +19,7 @@ import java.util.UUID;
 
 @Getter
 @Entity
-@Table(name = "community_feed_fork",
+@Table(name = "feed_fork",
         uniqueConstraints = @UniqueConstraint(columnNames = {"post_id", "user_id"}))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)

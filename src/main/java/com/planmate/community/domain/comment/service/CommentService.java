@@ -11,9 +11,11 @@ import com.planmate.community.domain.comment.dto.CommentCreateRequest;
 import com.planmate.community.domain.comment.dto.CommentResponse;
 import com.planmate.community.domain.comment.dto.CommentUpdateRequest;
 import com.planmate.community.domain.comment.entity.Comment;
+import com.planmate.community.domain.comment.entity.FeedComment;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.FeedPost;
 import build.buf.gen.planmate.notification.v1.NotificationType;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
@@ -53,7 +55,9 @@ public class CommentService {
         AuthorProfile author = userClient.getAuthor(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
 
-        Comment comment = Comment.builder()
+        Comment comment = post instanceof FeedPost
+                ? FeedComment.create(postId, userId, author.nickname(), request.content(), request.parentId())
+                : Comment.builder()
                 .postId(postId)
                 .userId(userId)
                 .authorNickname(author.nickname())

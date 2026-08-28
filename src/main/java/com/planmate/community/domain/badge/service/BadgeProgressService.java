@@ -5,8 +5,7 @@ import com.planmate.community.domain.badge.entity.UserBadgeId;
 import com.planmate.community.domain.badge.repository.UserBadgeRepository;
 import com.planmate.community.common.notification.CommunityNotificationFactory;
 import com.planmate.community.common.notification.NotificationOutboxWriter;
-import com.planmate.community.domain.post.enums.Category;
-import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
 import lombok.RequiredArgsConstructor;
@@ -29,7 +28,7 @@ public class BadgeProgressService {
 
     private final UserBadgeRepository userBadgeRepository;
     private final UserStatsRepository userStatsRepository;
-    private final PostRepository postRepository;
+    private final FeedPostRepository feedPostRepository;
     private final CommunityNotificationFactory notificationFactory;
     private final NotificationOutboxWriter notificationOutbox;
 
@@ -37,9 +36,8 @@ public class BadgeProgressService {
     @Transactional(propagation = Propagation.MANDATORY)
     public void refreshPostBadges(UUID userId) {
         upsert(userId, BadgeType.FIRST_STEP, postCount(userId));
-        upsert(userId, BadgeType.PLAN_MASTER, postRepository.countByUserIdAndCategory(userId, Category.FEED));
-        upsert(userId, BadgeType.NATIONWIDE,
-                postRepository.countDistinctRegionsByUserIdAndCategory(userId, Category.FEED));
+        upsert(userId, BadgeType.PLAN_MASTER, feedPostRepository.countByUserId(userId));
+        upsert(userId, BadgeType.NATIONWIDE, feedPostRepository.countDistinctRegionsByUserId(userId));
     }
 
     /** 댓글 작성/삭제 후 */

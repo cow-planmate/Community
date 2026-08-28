@@ -6,7 +6,7 @@ import com.planmate.community.domain.fork.dto.ForkResponse;
 import com.planmate.community.domain.fork.repository.FeedForkRepository;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
-import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,7 +19,7 @@ import java.util.UUID;
 public class FeedForkService {
 
     private final FeedForkRepository feedForkRepository;
-    private final PostRepository postRepository;
+    private final FeedPostRepository postRepository;
 
     /**
      * 피드 일정 가져가기(포크) — 횟수 제한 없음.

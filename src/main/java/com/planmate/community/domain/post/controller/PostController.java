@@ -92,7 +92,7 @@ public class PostController {
             @Valid @RequestBody PostCreateRequest request
     ) {
         UUID userId = UUID.fromString(authentication.getName());
-        PostDetailResponse response = postService.createPost(userId, request);
+        PostDetailResponse response = postService.createCommunityPost(userId, request);
         return ResponseEntity.status(HttpStatus.CREATED).body(response);
     }
 
