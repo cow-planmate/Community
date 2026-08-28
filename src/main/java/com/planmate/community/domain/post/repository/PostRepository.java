@@ -18,6 +18,9 @@ import java.util.UUID;
 
 public interface PostRepository extends JpaRepository<Post, Long> {
 
+    @Query("SELECT p FROM Post p WHERE TYPE(p) = Post AND p.postId = :postId")
+    Optional<Post> findCommunityById(@Param("postId") Long postId);
+
     Page<Post> findByCategory(Category category, Pageable pageable);
 
     // MATE 참여 등 "정원 검사 → 저장"의 원자성을 위해 게시글 행을 잠근다 (동시 참여 직렬화)
@@ -58,28 +61,7 @@ public interface PostRepository extends JpaRepository<Post, Long> {
                                                @Param("q") String q,
                                                Pageable pageable);
 
-    // FEED 목록 필터 — 조건은 전부 null-safe (null이면 미적용)
-    // 함수 인자의 cast(... as string)은 필수: 파라미터가 null일 때 PG가 타입을 추론하지 못해 bytea로 간주한다
-    @Query("""
-            SELECT p FROM Post p
-            WHERE p.category = :category
-              AND (:region IS NULL OR p.region = :region)
-              AND (:minDays IS NULL OR p.durationDays >= :minDays)
-              AND (:maxDays IS NULL OR p.durationDays <= :maxDays)
-              AND (:tag IS NULL OR function('jsonb_exists', p.tags, cast(:tag as string)) = TRUE)
-              AND (:q IS NULL
-                OR p.title ilike concat('%', cast(:q as string), '%')
-                OR p.contentText ilike concat('%', cast(:q as string), '%'))
-            """)
-    Page<Post> findFeedPosts(@Param("category") Category category,
-                             @Param("region") String region,
-                             @Param("minDays") Integer minDays,
-                             @Param("maxDays") Integer maxDays,
-                             @Param("tag") String tag,
-                             @Param("q") String q,
-                             Pageable pageable);
-
-    // 지역별 게시글 수 집계 (피드 지도/필터용)
+    // 지역별 게시글 수 집계 (피드는 FeedPostRepository.countRegions 가 따로 있다)
     @Query("""
             SELECT p.region AS region, COUNT(p) AS postCount
             FROM Post p
@@ -129,16 +111,6 @@ public interface PostRepository extends JpaRepository<Post, Long> {
                                               @Param("categories") Collection<Category> categories,
                                               Pageable pageable);
 
-    // ── 뱃지 집계 (삭제된 글은 @SQLRestriction으로 자동 제외된다) ──────────
-    long countByUserIdAndCategory(UUID userId, Category category);
-
-    /** 여행기를 쓴 서로 다른 지역 수 */
-    @Query("""
-            SELECT COUNT(DISTINCT p.region) FROM Post p
-            WHERE p.userId = :userId AND p.category = :category AND p.region IS NOT NULL
-            """)
-    long countDistinctRegionsByUserIdAndCategory(@Param("userId") UUID userId, @Param("category") Category category);
-
     // 카운터는 동시성 안전하게 원자적 UPDATE로 증감한다
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Post p SET p.likeCount = p.likeCount + :delta WHERE p.postId = :postId")
@@ -151,10 +123,6 @@ public interface PostRepository extends JpaRepository<Post, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Post p SET p.commentCount = p.commentCount + :delta WHERE p.postId = :postId")
     void addCommentCount(@Param("postId") Long postId, @Param("delta") int delta);
-
-    @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Post p SET p.forkCount = p.forkCount + :delta WHERE p.postId = :postId")
-    void addForkCount(@Param("postId") Long postId, @Param("delta") int delta);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE Post p SET p.viewCount = p.viewCount + :delta WHERE p.postId = :postId")

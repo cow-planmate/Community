@@ -7,9 +7,11 @@ import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.common.notification.CommunityNotificationFactory;
 import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.reaction.dto.ReactionResponse;
 import com.planmate.community.domain.reaction.entity.Reaction;
+import com.planmate.community.domain.reaction.entity.FeedReaction;
 import com.planmate.community.domain.reaction.enums.ReactionType;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
 import com.planmate.community.domain.stats.service.UserStatsService;
@@ -49,7 +51,9 @@ public class ReactionService {
         boolean notifyLike = false;
 
         if (existing.isEmpty()) {
-            reactionRepository.save(Reaction.builder()
+            reactionRepository.save(post instanceof FeedPost
+                    ? FeedReaction.create(postId, userId, type)
+                    : Reaction.builder()
                     .postId(postId)
                     .userId(userId)
                     .type(type)

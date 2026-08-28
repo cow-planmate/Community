@@ -2,8 +2,7 @@ package com.planmate.community.domain.badge.service;
 
 import com.planmate.community.domain.badge.enums.BadgeType;
 import com.planmate.community.domain.badge.repository.UserBadgeRepository;
-import com.planmate.community.domain.post.enums.Category;
-import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
 import com.planmate.community.domain.stats.entity.UserStats;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
 import com.planmate.community.common.notification.CommunityNotificationFactory;
@@ -34,7 +33,7 @@ class BadgeProgressServiceTest {
     private UserStatsRepository userStatsRepository;
 
     @Mock
-    private PostRepository postRepository;
+    private FeedPostRepository feedPostRepository;
     @Mock private CommunityNotificationFactory notificationFactory;
     @Mock private NotificationOutboxWriter notificationOutbox;
 
@@ -54,8 +53,8 @@ class BadgeProgressServiceTest {
     @DisplayName("게시글 활동은 글 관련 뱃지만 갱신한다")
     void refreshesPostBadgesOnly() {
         when(userStatsRepository.findById(USER_ID)).thenReturn(Optional.of(stats(4, 30, 0)));
-        when(postRepository.countByUserIdAndCategory(USER_ID, Category.FEED)).thenReturn(3L);
-        when(postRepository.countDistinctRegionsByUserIdAndCategory(USER_ID, Category.FEED)).thenReturn(2L);
+        when(feedPostRepository.countByUserId(USER_ID)).thenReturn(3L);
+        when(feedPostRepository.countDistinctRegionsByUserId(USER_ID)).thenReturn(2L);
 
         badgeProgressService.refreshPostBadges(USER_ID);
 
@@ -75,7 +74,7 @@ class BadgeProgressServiceTest {
         badgeProgressService.refreshCommentBadges(USER_ID);
 
         verify(userBadgeRepository).upsertProgress(USER_ID, BadgeType.EAGER_REVIEWER.code(), 21L, 20);
-        verify(postRepository, never()).countByUserIdAndCategory(USER_ID, Category.FEED);
+        verify(feedPostRepository, never()).countByUserId(USER_ID);
     }
 
     @Test

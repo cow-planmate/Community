@@ -10,6 +10,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Inheritance;
+import jakarta.persistence.InheritanceType;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.AllArgsConstructor;
@@ -17,6 +19,9 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Polymorphism;
+import org.hibernate.annotations.PolymorphismType;
 import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
@@ -26,6 +31,8 @@ import java.util.UUID;
 @Getter
 @Entity
 @Table(name = "community_post")
+@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
+@Polymorphism(type = PolymorphismType.EXPLICIT)
 @SQLRestriction("deleted_at IS NULL")
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 @AllArgsConstructor(access = AccessLevel.PRIVATE)
@@ -33,7 +40,8 @@ import java.util.UUID;
 public class Post extends BaseSoftDeleteEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "domain_post_id")
+    @GenericGenerator(name = "domain_post_id", type = com.planmate.community.common.persistence.DomainSequenceGenerator.class)
     @Column(name = "post_id")
     private Long postId;
 
@@ -123,27 +131,24 @@ public class Post extends BaseSoftDeleteEntity {
     @Column(columnDefinition = "jsonb")
     private String places;
 
-    // FEED 전용
-    @Column(name = "duration_days")
-    private Integer durationDays;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private String itinerary;
-
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private String tags;
-
-    @Column(name = "source_plan_id")
-    private UUID sourcePlanId;
-
-    @Column(name = "fork_count", nullable = false)
-    @Builder.Default
-    private int forkCount = 0;
-
     public boolean isAuthor(UUID userId) {
         return this.userId.equals(userId);
+    }
+
+    protected void initializeCommon(Category category, UUID userId, String authorNickname, String title,
+                                    String content, String contentText, String thumbnailUrl,
+                                    String region, String location, Double lat, Double lng) {
+        this.category = category;
+        this.userId = userId;
+        this.authorNickname = authorNickname;
+        this.title = title;
+        this.content = content;
+        this.contentText = contentText;
+        this.thumbnailUrl = thumbnailUrl;
+        this.region = region;
+        this.location = location;
+        this.lat = lat;
+        this.lng = lng;
     }
 
     public void changeStatus(MateStatus status) {
@@ -230,20 +235,34 @@ public class Post extends BaseSoftDeleteEntity {
     public void updateFeedFields(String region, String location, Integer durationDays,
                                  String itinerary, boolean itineraryChanged,
                                  String tags, boolean tagsChanged) {
-        if (region != null && !region.isBlank()) {
-            this.region = region;
+        if (!(this instanceof FeedPost feedPost)) {
+            throw new IllegalStateException("피드 게시글이 아닙니다.");
         }
-        if (location != null && !location.isBlank()) {
-            this.location = location;
-        }
-        if (durationDays != null) {
-            this.durationDays = durationDays;
-        }
-        if (itineraryChanged) {
-            this.itinerary = itinerary;
-        }
-        if (tagsChanged) {
-            this.tags = tags;
-        }
+        feedPost.updateFeed(region, location, durationDays, itinerary, itineraryChanged, tags, tagsChanged);
+    }
+
+    public Integer getDurationDays() {
+        return null;
+    }
+
+    public String getItinerary() {
+        return null;
+    }
+
+    public String getTags() {
+        return null;
+    }
+
+    public UUID getSourcePlanId() {
+        return null;
+    }
+
+    public int getForkCount() {
+        return 0;
+    }
+
+    protected void updateFeedLocation(String region, String location) {
+        if (region != null && !region.isBlank()) this.region = region;
+        if (location != null && !location.isBlank()) this.location = location;
     }
 }

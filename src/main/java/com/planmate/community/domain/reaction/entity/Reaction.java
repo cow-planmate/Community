@@ -8,6 +8,8 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.Inheritance;
+import jakarta.persistence.InheritanceType;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
@@ -16,12 +18,17 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.GenericGenerator;
+import org.hibernate.annotations.Polymorphism;
+import org.hibernate.annotations.PolymorphismType;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Getter
 @Entity
+@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
+@Polymorphism(type = PolymorphismType.EXPLICIT)
 @Table(name = "community_reaction",
         uniqueConstraints = @UniqueConstraint(columnNames = {"post_id", "user_id"}))
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -30,7 +37,8 @@ import java.util.UUID;
 public class Reaction {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "domain_reaction_id")
+    @GenericGenerator(name = "domain_reaction_id", type = com.planmate.community.common.persistence.DomainSequenceGenerator.class)
     @Column(name = "reaction_id")
     private Long reactionId;
 
@@ -48,6 +56,12 @@ public class Reaction {
     private LocalDateTime createdAt;
 
     public void changeType(ReactionType type) {
+        this.type = type;
+    }
+
+    protected void initialize(Long postId, UUID userId, ReactionType type) {
+        this.postId = postId;
+        this.userId = userId;
         this.type = type;
     }
 

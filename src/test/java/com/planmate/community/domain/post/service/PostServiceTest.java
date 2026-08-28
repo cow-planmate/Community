@@ -14,9 +14,12 @@ import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
 import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
 import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
+import com.planmate.community.domain.reaction.repository.FeedReactionRepository;
 import com.planmate.community.domain.post.validator.PostAccessValidator;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
 import com.planmate.community.domain.stats.repository.UserStatsRepository;
@@ -64,6 +67,9 @@ class PostServiceTest {
     private PostRepository postRepository;
 
     @Mock
+    private FeedPostRepository feedPostRepository;
+
+    @Mock
     private UserStatsRepository userStatsRepository;
 
     @Mock
@@ -77,6 +83,9 @@ class PostServiceTest {
 
     @Mock
     private ReactionRepository reactionRepository;
+
+    @Mock
+    private FeedReactionRepository feedReactionRepository;
 
     @Mock
     private FeedForkRepository feedForkRepository;
@@ -97,9 +106,22 @@ class PostServiceTest {
         PostAssembler postAssembler = new PostAssembler(
                 userClient, userStatsRepository, mateParticipantRepository, objectMapper);
         postService = new PostService(
-                postRepository, userClient, new PostAccessValidator(),
+                postRepository, feedPostRepository, userClient, new PostAccessValidator(),
                 new ProfileAccessValidator(userClient), objectMapper,
-                viewCountService, reactionRepository, feedForkRepository, postAssembler, userStatsService, imageService);
+                viewCountService, reactionRepository, feedReactionRepository, feedForkRepository,
+                postAssembler, userStatsService, imageService);
+        org.mockito.Mockito.lenient().when(feedPostRepository.save(any(FeedPost.class)))
+                .thenAnswer(invocation -> {
+                    FeedPost post = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(post, "postId", 1L);
+                    return post;
+                });
+        org.mockito.Mockito.lenient().when(postRepository.save(any(Post.class)))
+                .thenAnswer(invocation -> {
+                    Post post = invocation.getArgument(0);
+                    ReflectionTestUtils.setField(post, "postId", 1L);
+                    return post;
+                });
     }
 
     private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
@@ -134,11 +156,6 @@ class PostServiceTest {
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(mateParticipantRepository.countByPostId(1L)).thenReturn(0L);
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
-            Post post = invocation.getArgument(0);
-            ReflectionTestUtils.setField(post, "postId", 1L);
-            return post;
-        });
 
         var response = postService.createPost(userId, createRequest("mate", null, null, "제주", 4));
 
@@ -238,14 +255,14 @@ class PostServiceTest {
     @Test
     @DisplayName("피드 상세 조회 시 로그인 사용자가 가져갔으면 myFork가 true다")
     void getFeedPostWithMyForkTrue() {
-        Post post = feedPost(userId);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        FeedPost post = feedPost(userId);
+        when(feedPostRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
-        when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
+        when(feedReactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
         when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(true);
 
-        var response = postService.getPost(1L, userId);
+        var response = postService.getFeedPost(1L, userId);
 
         assertThat(response.myFork()).isTrue();
     }
@@ -253,16 +270,16 @@ class PostServiceTest {
     @Test
     @DisplayName("피드 상세 조회 시 가져가지 않았으면 myFork가 false, 비로그인이면 null이다")
     void getFeedPostWithMyForkFalseOrNull() {
-        Post post = feedPost(userId);
-        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        FeedPost post = feedPost(userId);
+        when(feedPostRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(feedForkRepository.existsByPostIdAndUserId(1L, userId)).thenReturn(false);
 
-        var authenticated = postService.getPost(1L, userId);
+        var authenticated = postService.getFeedPost(1L, userId);
         assertThat(authenticated.myFork()).isFalse();
 
-        var anonymous = postService.getPost(1L, null);
+        var anonymous = postService.getFeedPost(1L, null);
         assertThat(anonymous.myFork()).isNull();
         verify(feedForkRepository).existsByPostIdAndUserId(1L, userId);
     }
@@ -285,14 +302,14 @@ class PostServiceTest {
     @DisplayName("작성자별 목록 조회 - 비공개 프로필이라도 본인이면 내부 API를 묻지 않고 그대로 조회한다")
     void getPostsByUserIdAllowedForSelf() {
         UUID authorId = UUID.randomUUID();
-        when(postRepository.findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class)))
+        when(feedPostRepository.findByUserId(eq(authorId), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("feed", 0, 20, "latest", "desc", null, null, null, null, null, authorId, authorId);
 
-        verify(postRepository).findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class));
+        verify(feedPostRepository).findByUserId(eq(authorId), any(Pageable.class));
         verify(userClient, never()).isProfilePublic(any());
     }
 
@@ -301,14 +318,14 @@ class PostServiceTest {
     void getPostsByUserIdAllowedWhenProfilePublic() {
         UUID authorId = UUID.randomUUID();
         when(userClient.isProfilePublic(authorId)).thenReturn(true);
-        when(postRepository.findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class)))
+        when(feedPostRepository.findByUserId(eq(authorId), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("feed", 0, 20, "latest", "desc", null, null, null, null, null, authorId, null);
 
-        verify(postRepository).findByCategoryAndUserId(eq(Category.FEED), eq(authorId), any(Pageable.class));
+        verify(feedPostRepository).findByUserId(eq(authorId), any(Pageable.class));
     }
 
     @Test
@@ -384,12 +401,6 @@ class PostServiceTest {
     void createFeedPostStoresFeedFields() throws Exception {
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
-            Post post = invocation.getArgument(0);
-            ReflectionTestUtils.setField(post, "postId", 1L);
-            return post;
-        });
-
         ObjectNode itinerary = objectMapper.createObjectNode();
         ObjectNode day = itinerary.putArray("days").addObject();
         day.put("day", 1);
@@ -399,9 +410,9 @@ class PostServiceTest {
 
         var response = postService.createPost(userId, feedRequest("서울", 3, itinerary, List.of("#극한의J")));
 
-        ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
-        verify(postRepository).save(captor.capture());
-        Post saved = captor.getValue();
+        ArgumentCaptor<FeedPost> captor = ArgumentCaptor.forClass(FeedPost.class);
+        verify(feedPostRepository).save(captor.capture());
+        FeedPost saved = captor.getValue();
         assertThat(saved.getRegion()).isEqualTo("서울");
         assertThat(saved.getDurationDays()).isEqualTo(3);
         assertThat(saved.getItinerary()).isEqualTo(objectMapper.writeValueAsString(itinerary));
@@ -448,22 +459,22 @@ class PostServiceTest {
     }
 
     @Test
-    @DisplayName("피드에 필터가 있으면 전용 쿼리를, 없으면 카테고리 조회를 사용한다")
+    @DisplayName("피드는 필터 유무와 관계없이 독립 피드 테이블 쿼리를 사용한다")
     void getFeedPostsQueryRouting() {
-        when(postRepository.findByCategory(eq(Category.FEED), any(Pageable.class)))
+        when(feedPostRepository.findFeedPosts(isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
-        when(postRepository.findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), any(Pageable.class)))
+        when(feedPostRepository.findFeedPosts(eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
         when(userClient.getAuthors(anyCollection())).thenReturn(Map.of());
         when(userStatsRepository.findAllById(any())).thenReturn(List.of());
 
         postService.getPosts("feed", 0, 20, "forks", "desc", null, null, null, null, null, null, null);
-        verify(postRepository).findByCategory(eq(Category.FEED), any(Pageable.class));
-        verify(postRepository, never()).findFeedPosts(any(), any(), any(), any(), any(), any(), any());
+        verify(feedPostRepository).findFeedPosts(isNull(), isNull(), isNull(), isNull(), isNull(), any(Pageable.class));
+        verify(postRepository, never()).findByCategory(eq(Category.FEED), any(Pageable.class));
 
         postService.getPosts("feed", 0, 20, "forks", "desc", null, "서울", 2, 3, "#극한의J", null, null);
         ArgumentCaptor<Pageable> pageableCaptor = ArgumentCaptor.forClass(Pageable.class);
-        verify(postRepository).findFeedPosts(eq(Category.FEED), eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), pageableCaptor.capture());
+        verify(feedPostRepository).findFeedPosts(eq("서울"), eq(2), eq(3), eq("#극한의J"), isNull(), pageableCaptor.capture());
         assertThat(pageableCaptor.getValue().getSort().getOrderFor("forkCount")).isNotNull();
     }
 
@@ -481,7 +492,7 @@ class PostServiceTest {
                 return 3;
             }
         };
-        when(postRepository.countRegionsByCategory(Category.FEED)).thenReturn(List.of(seoul));
+        when(feedPostRepository.countRegions()).thenReturn(List.of(seoul));
 
         assertThat(postService.getRegionCounts("feed"))
                 .containsExactly(new RegionCountResponse("서울", 3));
@@ -500,17 +511,9 @@ class PostServiceTest {
         return post;
     }
 
-    private Post feedPost(UUID authorId) {
-        Post post = Post.builder()
-                .category(Category.FEED)
-                .userId(authorId)
-                .authorNickname("작성자")
-                .title("서울 여행")
-                .content("{}")
-                .contentText("본문")
-                .region("서울")
-                .durationDays(3)
-                .build();
+    private FeedPost feedPost(UUID authorId) {
+        FeedPost post = FeedPost.create(authorId, "작성자", "서울 여행", "{}", "본문", null,
+                "서울", null, null, null, 3, null, null, null);
         ReflectionTestUtils.setField(post, "postId", 1L);
         return post;
     }

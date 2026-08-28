@@ -16,7 +16,7 @@ import java.util.UUID;
 
 @Tag(name = "Fork", description = "피드 일정 가져가기 API")
 @RestController
-@RequestMapping("/api/community/posts/{postId}")
+@RequestMapping("/api/feed/posts/{postId}")
 @RequiredArgsConstructor
 public class FeedForkController {
 

@@ -19,12 +19,15 @@ import com.planmate.community.domain.post.dto.PostUpdateRequest;
 import com.planmate.community.domain.post.dto.RecommendPlace;
 import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
 import com.planmate.community.domain.post.enums.SortType;
 import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
 import com.planmate.community.domain.post.validator.PostAccessValidator;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
+import com.planmate.community.domain.reaction.repository.FeedReactionRepository;
 import com.planmate.community.domain.stats.service.UserStatsService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -53,12 +56,14 @@ public class PostService {
     private static final Pattern HH_MM = Pattern.compile("^([01]\\d|2[0-3]):[0-5]\\d$");
 
     private final PostRepository postRepository;
+    private final FeedPostRepository feedPostRepository;
     private final UserClient userClient;
     private final PostAccessValidator postAccessValidator;
     private final ProfileAccessValidator profileAccessValidator;
     private final ObjectMapper objectMapper;
     private final ViewCountService viewCountService;
     private final ReactionRepository reactionRepository;
+    private final FeedReactionRepository feedReactionRepository;
     private final FeedForkRepository feedForkRepository;
     private final PostAssembler postAssembler;
     private final UserStatsService userStatsService;
@@ -76,7 +81,14 @@ public class PostService {
         List<RecommendPlace> places = category == Category.RECOMMEND ? normalizePlaces(request.places()) : List.of();
         RecommendPlace head = places.isEmpty() ? null : places.get(0);
 
-        Post post = Post.builder()
+        Post post = category == Category.FEED
+                ? FeedPost.create(userId, author.nickname(), request.title(), writeContent(request.content()),
+                        request.contentText() != null ? request.contentText() : "", request.thumbnailUrl(),
+                        request.region(), request.location(), request.lat(), request.lng(), request.durationDays(),
+                        writeItinerary(request.itinerary()),
+                        request.tags() != null && !request.tags().isEmpty() ? writeJson(request.tags()) : null,
+                        request.sourcePlanId())
+                : Post.builder()
                 .category(category)
                 .userId(userId)
                 .authorNickname(author.nickname())
@@ -85,33 +97,42 @@ public class PostService {
                 .contentText(request.contentText() != null ? request.contentText() : "")
                 .thumbnailUrl(request.thumbnailUrl())
                 .isAnswered(category == Category.QNA ? Boolean.FALSE : null)
-                .region(category == Category.MATE || category == Category.FEED ? request.region() : null)
+                .region(category == Category.MATE ? request.region() : null)
                 .maxParticipants(category == Category.MATE ? request.maxParticipants() : null)
                 .status(category == Category.MATE ? MateStatus.RECRUITING : null)
                 .location(head != null ? head.name()
-                        : category == Category.RECOMMEND || category == Category.FEED ? request.location() : null)
+                        : category == Category.RECOMMEND ? request.location() : null)
                 .rating(category == Category.RECOMMEND
                         ? (averageRating(places) != null ? averageRating(places) : request.rating())
                         : null)
-                .lat(head != null ? head.lat()
-                        : category == Category.RECOMMEND || category == Category.FEED ? request.lat() : null)
-                .lng(head != null ? head.lng()
-                        : category == Category.RECOMMEND || category == Category.FEED ? request.lng() : null)
+                .lat(head != null ? head.lat() : category == Category.RECOMMEND ? request.lat() : null)
+                .lng(head != null ? head.lng() : category == Category.RECOMMEND ? request.lng() : null)
                 .placeAddress(head != null ? head.address() : category == Category.RECOMMEND ? request.placeAddress() : null)
                 .placePhone(head != null ? head.phone() : category == Category.RECOMMEND ? request.placePhone() : null)
                 .placeCategory(head != null ? head.category() : category == Category.RECOMMEND ? request.placeCategory() : null)
                 .placeUrl(head != null ? head.url() : category == Category.RECOMMEND ? request.placeUrl() : null)
                 .places(places.isEmpty() ? null : writeJson(places))
-                .durationDays(category == Category.FEED ? request.durationDays() : null)
-                .itinerary(category == Category.FEED ? writeItinerary(request.itinerary()) : null)
-                .tags(category == Category.FEED && request.tags() != null && !request.tags().isEmpty()
-                        ? writeJson(request.tags()) : null)
-                .sourcePlanId(category == Category.FEED ? request.sourcePlanId() : null)
                 .build();
 
-        Post saved = postRepository.save(post);
+        Post saved = post instanceof FeedPost feed ? feedPostRepository.save(feed) : postRepository.save(post);
         userStatsService.recordPostCreated(userId);
         return postAssembler.toDetail(saved, null, null);
+    }
+
+    @Transactional
+    public PostDetailResponse createFeedPost(UUID userId, PostCreateRequest request) {
+        if (Category.from(request.category()) != Category.FEED) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "피드 API는 FEED 카테고리만 허용합니다.");
+        }
+        return createPost(userId, request);
+    }
+
+    @Transactional
+    public PostDetailResponse createCommunityPost(UUID userId, PostCreateRequest request) {
+        if (Category.from(request.category()) == Category.FEED) {
+            throw new CommunityException(ErrorCode.INVALID_INPUT, "FEED는 /api/feed/posts를 사용해야 합니다.");
+        }
+        return createPost(userId, request);
     }
 
     /**
@@ -133,17 +154,20 @@ public class PostService {
         }
 
         // 특정 사용자의 글만 (프로필 페이지) — 다른 필터와 조합하지 않는다
+        if (category == Category.FEED) {
+            Page<FeedPost> feeds = userId != null
+                    ? feedPostRepository.findByUserId(userId, pageable)
+                    : feedPostRepository.findFeedPosts(normalizeBlank(region), minDays, maxDays, normalizeBlank(tag), normalizeBlank(q), pageable);
+            return PageResponse.of(feeds, postAssembler.toSummaries(new ArrayList<>(feeds.getContent())));
+        }
         Page<Post> posts = userId != null
                 ? postRepository.findByCategoryAndUserId(category, userId, pageable)
-                : findPostsPage(category, normalizeBlank(q), normalizeBlank(region), minDays, maxDays, normalizeBlank(tag), pageable);
+                : findPostsPage(category, normalizeBlank(q), pageable);
         return PageResponse.of(posts, postAssembler.toSummaries(posts.getContent()));
     }
 
     // FEED에 피드 필터가 하나라도 있으면 전용 쿼리로, 아니면 기존 조회/검색 쿼리로 라우팅한다
-    private Page<Post> findPostsPage(Category category, String q, String region, Integer minDays, Integer maxDays, String tag, Pageable pageable) {
-        if (category == Category.FEED && (region != null || minDays != null || maxDays != null || tag != null)) {
-            return postRepository.findFeedPosts(category, region, minDays, maxDays, tag, q, pageable);
-        }
+    private Page<Post> findPostsPage(Category category, String q, Pageable pageable) {
         if (q == null) {
             return postRepository.findByCategory(category, pageable);
         }
@@ -156,6 +180,9 @@ public class PostService {
 
     public List<RegionCountResponse> getRegionCounts(String categoryValue) {
         Category category = Category.from(categoryValue);
+        if (category == Category.FEED) {
+            return feedPostRepository.countRegions().stream().map(RegionCountResponse::of).toList();
+        }
         return postRepository.countRegionsByCategory(category).stream()
                 .map(RegionCountResponse::of)
                 .toList();
@@ -163,6 +190,9 @@ public class PostService {
 
     public List<PostSummaryResponse> getHotPosts(String categoryValue) {
         Category category = Category.from(categoryValue);
+        if (category == Category.FEED) {
+            return postAssembler.toSummaries(new ArrayList<>(feedPostRepository.findTop3ByOrderByLikeCountDescCreatedAtDesc()));
+        }
         return postAssembler.toSummaries(postRepository.findTop3ByCategoryOrderByLikeCountDescCreatedAtDesc(category));
     }
 
@@ -175,7 +205,14 @@ public class PostService {
     public PostDetailResponse getPost(Long postId, UUID viewerId) {
         Post post = findPost(postId);
         viewCountService.registerView(postId);
-        return postAssembler.toDetail(post, findMyReaction(postId, viewerId), findMyFork(post, viewerId));
+        return postAssembler.toDetail(post, findMyReaction(postId, viewerId), null);
+    }
+
+    @Transactional
+    public PostDetailResponse getFeedPost(Long feedId, UUID viewerId) {
+        FeedPost post = findFeedPost(feedId);
+        viewCountService.registerFeedView(feedId);
+        return postAssembler.toDetail(post, findMyFeedReaction(feedId, viewerId), findMyFork(post, viewerId));
     }
 
     /**
@@ -191,9 +228,24 @@ public class PostService {
         );
     }
 
+    public AdjacentPostsResponse getAdjacentFeedPosts(Long feedId) {
+        return AdjacentPostsResponse.of(
+                feedPostRepository.findFirstByPostIdGreaterThanOrderByPostIdAsc(feedId).orElse(null),
+                feedPostRepository.findFirstByPostIdLessThanOrderByPostIdDesc(feedId).orElse(null));
+    }
+
     @Transactional
     public PostDetailResponse updatePost(UUID userId, Long postId, PostUpdateRequest request) {
         Post post = findPost(postId);
+        return updatePost(userId, postId, request, post);
+    }
+
+    @Transactional
+    public PostDetailResponse updateFeedPost(UUID userId, Long feedId, PostUpdateRequest request) {
+        return updatePost(userId, feedId, request, findFeedPost(feedId));
+    }
+
+    private PostDetailResponse updatePost(UUID userId, Long postId, PostUpdateRequest request, Post post) {
         postAccessValidator.validateAuthor(post, userId);
 
         // 수정 전 이미지 URL(본문 + 커버)을 기록해 두었다가, 수정 후 더 이상 참조되지 않는 것만 정리한다
@@ -250,7 +302,8 @@ public class PostService {
         previousImageUrls.removeAll(collectImageUrls(post));
         deleteImagesAfterCommit(previousImageUrls);
 
-        return postAssembler.toDetail(post, findMyReaction(postId, userId), findMyFork(post, userId));
+        String reaction = post instanceof FeedPost ? findMyFeedReaction(postId, userId) : findMyReaction(postId, userId);
+        return postAssembler.toDetail(post, reaction, findMyFork(post, userId));
     }
 
     /** 게시글이 현재 참조하는 이미지 URL 집합 (본문 이미지 블록 + 커버). */
@@ -300,6 +353,15 @@ public class PostService {
     @Transactional
     public void deletePost(UUID userId, boolean isAdmin, Long postId) {
         Post post = findPost(postId);
+        deletePost(userId, isAdmin, post);
+    }
+
+    @Transactional
+    public void deleteFeedPost(UUID userId, boolean isAdmin, Long feedId) {
+        deletePost(userId, isAdmin, findFeedPost(feedId));
+    }
+
+    private void deletePost(UUID userId, boolean isAdmin, Post post) {
         postAccessValidator.validateAuthorOrAdmin(post, userId, isAdmin);
         post.softDelete();
         userStatsService.recordPostDeleted(post.getUserId());
@@ -312,6 +374,11 @@ public class PostService {
                 .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
     }
 
+    private FeedPost findFeedPost(Long feedId) {
+        return feedPostRepository.findById(feedId)
+                .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
+    }
+
     private String findMyReaction(Long postId, UUID viewerId) {
         if (viewerId == null) {
             return null;
@@ -319,6 +386,12 @@ public class PostService {
         return reactionRepository.findByPostIdAndUserId(postId, viewerId)
                 .map(reaction -> reaction.getType().toLowerValue())
                 .orElse(null);
+    }
+
+    private String findMyFeedReaction(Long feedId, UUID viewerId) {
+        if (viewerId == null) return null;
+        return feedReactionRepository.findByPostIdAndUserId(feedId, viewerId)
+                .map(reaction -> reaction.getType().toLowerValue()).orElse(null);
     }
 
     // FEED 상세에서 로그인 사용자의 가져가기 여부 (비로그인·비FEED는 null → 응답에서 생략)

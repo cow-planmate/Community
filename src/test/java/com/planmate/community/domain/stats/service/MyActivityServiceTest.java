@@ -7,6 +7,7 @@ import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.entity.Post;
+import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.service.PostAssembler;
@@ -79,16 +80,8 @@ class MyActivityServiceTest {
     }
 
     private Post feedPost(long postId, String title) {
-        Post post = Post.builder()
-                .category(Category.FEED)
-                .userId(authorId)
-                .authorNickname("작성자")
-                .title(title)
-                .content("{}")
-                .contentText("본문")
-                .region("서울")
-                .durationDays(3)
-                .build();
+        Post post = FeedPost.create(authorId, "작성자", title, "{}", "본문", null,
+                "서울", null, null, null, 3, null, null, null);
         ReflectionTestUtils.setField(post, "postId", postId);
         return post;
     }
