@@ -2,39 +2,30 @@ package com.planmate.community.domain.reaction.entity;
 
 import com.planmate.community.domain.reaction.enums.ReactionType;
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Inheritance;
-import jakarta.persistence.InheritanceType;
+import jakarta.persistence.MappedSuperclass;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.GenericGenerator;
-import org.hibernate.annotations.Polymorphism;
-import org.hibernate.annotations.PolymorphismType;
 
 import java.time.LocalDateTime;
 import java.util.UUID;
 
+/** 커뮤니티 반응과 피드 반응의 공통 매핑. 상속 이유는 {@link com.planmate.community.domain.post.entity.Post} 참고. */
 @Getter
-@Entity
-@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
-@Polymorphism(type = PolymorphismType.EXPLICIT)
-@Table(name = "community_reaction",
-        uniqueConstraints = @UniqueConstraint(columnNames = {"post_id", "user_id"}))
+@MappedSuperclass
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Builder
-public class Reaction {
+@SuperBuilder
+public abstract class Reaction {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "domain_reaction_id")

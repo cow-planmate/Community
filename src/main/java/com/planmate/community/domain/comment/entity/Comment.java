@@ -2,35 +2,24 @@ package com.planmate.community.domain.comment.entity;
 
 import com.planmate.community.common.entity.BaseSoftDeleteEntity;
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Inheritance;
-import jakarta.persistence.InheritanceType;
-import jakarta.persistence.Table;
+import jakarta.persistence.MappedSuperclass;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
-import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
-import org.hibernate.annotations.SQLRestriction;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.GenericGenerator;
-import org.hibernate.annotations.Polymorphism;
-import org.hibernate.annotations.PolymorphismType;
 
 import java.util.UUID;
 
+/** 커뮤니티 댓글과 피드 댓글의 공통 매핑. 상속 이유는 {@link com.planmate.community.domain.post.entity.Post} 참고. */
 @Getter
-@Entity
-@Table(name = "community_comment")
-@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
-@Polymorphism(type = PolymorphismType.EXPLICIT)
-@SQLRestriction("deleted_at IS NULL")
+@MappedSuperclass
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Builder
-public class Comment extends BaseSoftDeleteEntity {
+@SuperBuilder
+public abstract class Comment extends BaseSoftDeleteEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "domain_comment_id")

@@ -10,6 +10,7 @@ import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.reaction.dto.ReactionResponse;
+import com.planmate.community.domain.reaction.entity.CommunityReaction;
 import com.planmate.community.domain.reaction.entity.Reaction;
 import com.planmate.community.domain.reaction.entity.FeedReaction;
 import com.planmate.community.domain.reaction.enums.ReactionType;
@@ -45,15 +46,13 @@ public class ReactionService {
         ReactionType type = ReactionType.from(typeValue);
         Post post = findPost(postId);
 
-        Optional<Reaction> existing = reactionRepository.findByPostIdAndUserId(postId, userId);
+        Optional<CommunityReaction> existing = reactionRepository.findByPostIdAndUserId(postId, userId);
         String myReaction;
         int likeDelta;
         boolean notifyLike = false;
 
         if (existing.isEmpty()) {
-            reactionRepository.save(post instanceof FeedPost
-                    ? FeedReaction.create(postId, userId, type)
-                    : Reaction.builder()
+            reactionRepository.save(CommunityReaction.builder()
                     .postId(postId)
                     .userId(userId)
                     .type(type)

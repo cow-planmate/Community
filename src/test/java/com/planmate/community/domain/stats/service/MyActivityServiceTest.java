@@ -6,11 +6,13 @@ import com.planmate.community.common.client.UserClient;
 import com.planmate.community.domain.comment.repository.CommentRepository;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
 import com.planmate.community.domain.post.service.PostAssembler;
+import com.planmate.community.domain.reaction.entity.CommunityReaction;
 import com.planmate.community.domain.reaction.entity.Reaction;
 import com.planmate.community.domain.reaction.enums.ReactionType;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
@@ -79,9 +81,16 @@ class MyActivityServiceTest {
                 reactionRepository, userClient, postAssembler);
     }
 
-    private Post feedPost(long postId, String title) {
-        Post post = FeedPost.create(authorId, "작성자", title, "{}", "본문", null,
-                "서울", null, null, null, 3, null, null, null);
+    // FEED 는 이제 community_post 에 없으므로, 커뮤니티 활동 조회의 픽스처도 커뮤니티 글이다.
+    private CommunityPost communityPost(long postId, String title) {
+        CommunityPost post = CommunityPost.builder()
+                .category(Category.FREE)
+                .userId(authorId)
+                .authorNickname("작성자")
+                .title(title)
+                .content("{}")
+                .contentText("본문")
+                .build();
         ReflectionTestUtils.setField(post, "postId", postId);
         return post;
     }
@@ -95,10 +104,10 @@ class MyActivityServiceTest {
     @DisplayName("category를 주면 해당 게시판의 내 글만 조회한다")
     void getMyPostsWithCategory() {
         stubAssembler();
-        when(postRepository.findByUserIdAndCategoryInOrderByCreatedAtDesc(eq(userId), eq(List.of(Category.FEED)), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(feedPost(1L, "서울 여행"))));
+        when(postRepository.findByUserIdAndCategoryInOrderByCreatedAtDesc(eq(userId), eq(List.of(Category.FREE)), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(communityPost(1L, "서울 여행"))));
 
-        var response = myActivityService.getMyPosts(userId, "feed", 0, 20);
+        var response = myActivityService.getMyPosts(userId, "free", 0, 20);
 
         assertThat(response.items()).extracting(PostSummaryResponse::title).containsExactly("서울 여행");
         verify(postRepository, never()).findByUserIdOrderByCreatedAtDesc(any(), any());
@@ -122,7 +131,7 @@ class MyActivityServiceTest {
     void getMyPostsWithoutCategory() {
         stubAssembler();
         when(postRepository.findByUserIdOrderByCreatedAtDesc(eq(userId), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(feedPost(1L, "서울 여행"))));
+                .thenReturn(new PageImpl<>(List.of(communityPost(1L, "서울 여행"))));
 
         myActivityService.getMyPosts(userId, null, 0, 20);
 
@@ -134,13 +143,13 @@ class MyActivityServiceTest {
     void getLikedPostsFillsActedAt() {
         stubAssembler();
         LocalDateTime likedAt = LocalDateTime.of(2026, 7, 20, 10, 0);
-        when(postRepository.findLikedByUserIdAndCategoryIn(eq(userId), eq(List.of(Category.FEED)), any(Pageable.class)))
-                .thenReturn(new PageImpl<>(List.of(feedPost(1L, "서울 여행"))));
+        when(postRepository.findLikedByUserIdAndCategoryIn(eq(userId), eq(List.of(Category.FREE)), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(communityPost(1L, "서울 여행"))));
         when(reactionRepository.findByUserIdAndPostIdIn(userId, List.of(1L)))
-                .thenReturn(List.of(Reaction.builder()
+                .thenReturn(List.of(CommunityReaction.builder()
                         .postId(1L).userId(userId).type(ReactionType.LIKE).createdAt(likedAt).build()));
 
-        var response = myActivityService.getLikedPosts(userId, "feed", 0, 20);
+        var response = myActivityService.getLikedPosts(userId, "free", 0, 20);
 
         assertThat(response.items()).singleElement()
                 .extracting(PostSummaryResponse::actedAt).isEqualTo(likedAt);

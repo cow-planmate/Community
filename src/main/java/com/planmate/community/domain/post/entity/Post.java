@@ -4,40 +4,36 @@ import com.planmate.community.common.entity.BaseSoftDeleteEntity;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
 import jakarta.persistence.Column;
-import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
-import jakarta.persistence.Inheritance;
-import jakarta.persistence.InheritanceType;
-import jakarta.persistence.Table;
+import jakarta.persistence.MappedSuperclass;
 import lombok.AccessLevel;
-import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import lombok.experimental.SuperBuilder;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.GenericGenerator;
-import org.hibernate.annotations.Polymorphism;
-import org.hibernate.annotations.PolymorphismType;
-import org.hibernate.annotations.SQLRestriction;
 import org.hibernate.type.SqlTypes;
 
 import java.math.BigDecimal;
 import java.util.UUID;
 
+/**
+ * 커뮤니티 게시글과 피드 게시글이 함께 쓰는 공통 필드·동작.
+ *
+ * 엔티티 상속(TABLE_PER_CLASS)이 아니라 매핑 상속이다 — 두 도메인은 ID 시퀀스가 분리돼 있어
+ * 같은 번호가 양쪽에 존재할 수 있고, 한 계층으로 묶으면 부모 타입 조회가 두 테이블을 UNION 해
+ * 남의 도메인 행을 집어 오거나(벌크 UPDATE 는 남의 카운터를 올린다) 만다.
+ */
 @Getter
-@Entity
-@Table(name = "community_post")
-@Inheritance(strategy = InheritanceType.TABLE_PER_CLASS)
-@Polymorphism(type = PolymorphismType.EXPLICIT)
-@SQLRestriction("deleted_at IS NULL")
+@MappedSuperclass
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-@AllArgsConstructor(access = AccessLevel.PRIVATE)
-@Builder
-public class Post extends BaseSoftDeleteEntity {
+@SuperBuilder
+public abstract class Post extends BaseSoftDeleteEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "domain_post_id")

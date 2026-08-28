@@ -5,9 +5,11 @@ import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.common.client.UserClient;
 import com.planmate.community.common.notification.CommunityNotificationFactory;
 import com.planmate.community.common.notification.NotificationOutboxWriter;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.repository.PostRepository;
+import com.planmate.community.domain.reaction.entity.CommunityReaction;
 import com.planmate.community.domain.reaction.entity.Reaction;
 import com.planmate.community.domain.reaction.enums.ReactionType;
 import com.planmate.community.domain.reaction.repository.ReactionRepository;
@@ -49,8 +51,8 @@ class ReactionServiceTest {
 
     private final UUID userId = UUID.randomUUID();
 
-    private Post post() {
-        return Post.builder()
+    private CommunityPost post() {
+        return CommunityPost.builder()
                 .category(Category.FREE)
                 .userId(UUID.randomUUID())
                 .authorNickname("작성자")
@@ -63,13 +65,13 @@ class ReactionServiceTest {
     @Test
     @DisplayName("반응이 없으면 등록하고 카운터를 증가시킨다")
     void reactNew() {
-        Post post = post();
+        CommunityPost post = post();
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.empty());
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         var response = reactionService.react(userId, 1L, "like");
 
-        verify(reactionRepository).save(any(Reaction.class));
+        verify(reactionRepository).save(any(CommunityReaction.class));
         verify(postRepository).addLikeCount(1L, 1);
         verify(userStatsService).recordLikeReceived(post.getUserId(), 1);
         assertThat(response.myReaction()).isEqualTo("like");
@@ -78,8 +80,8 @@ class ReactionServiceTest {
     @Test
     @DisplayName("같은 타입을 다시 보내면 해제(토글)된다")
     void reactToggleOff() {
-        Reaction existing = Reaction.builder().postId(1L).userId(userId).type(ReactionType.LIKE).build();
-        Post post = post();
+        CommunityReaction existing = CommunityReaction.builder().postId(1L).userId(userId).type(ReactionType.LIKE).build();
+        CommunityPost post = post();
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.of(existing));
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
@@ -94,8 +96,8 @@ class ReactionServiceTest {
     @Test
     @DisplayName("다른 타입이면 전환되어 양쪽 카운터가 조정된다")
     void reactSwitch() {
-        Reaction existing = Reaction.builder().postId(1L).userId(userId).type(ReactionType.LIKE).build();
-        Post post = post();
+        CommunityReaction existing = CommunityReaction.builder().postId(1L).userId(userId).type(ReactionType.LIKE).build();
+        CommunityPost post = post();
         when(reactionRepository.findByPostIdAndUserId(1L, userId)).thenReturn(Optional.of(existing));
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 

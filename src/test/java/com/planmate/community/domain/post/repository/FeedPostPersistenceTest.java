@@ -2,6 +2,7 @@ package com.planmate.community.domain.post.repository;
 
 import com.planmate.community.domain.comment.entity.FeedComment;
 import com.planmate.community.domain.comment.repository.FeedCommentRepository;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
@@ -78,7 +79,7 @@ class FeedPostPersistenceTest extends PostgresTestBase {
     @Test
     @DisplayName("일반 커뮤니티 글은 feed_post 행을 만들지 않는다")
     void communityPostDoesNotCreateFeedRow() {
-        Post post = Post.builder()
+        CommunityPost post = CommunityPost.builder()
                 .category(Category.FREE)
                 .userId(UUID.randomUUID())
                 .authorNickname("작성자")

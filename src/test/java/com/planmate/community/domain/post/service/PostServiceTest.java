@@ -13,6 +13,7 @@ import com.planmate.community.domain.participant.repository.MateParticipantRepos
 import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
 import com.planmate.community.domain.post.dto.RegionCountResponse;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.entity.FeedPost;
 import com.planmate.community.domain.post.enums.Category;
@@ -116,9 +117,9 @@ class PostServiceTest {
                     ReflectionTestUtils.setField(post, "postId", 1L);
                     return post;
                 });
-        org.mockito.Mockito.lenient().when(postRepository.save(any(Post.class)))
+        org.mockito.Mockito.lenient().when(postRepository.save(any(CommunityPost.class)))
                 .thenAnswer(invocation -> {
-                    Post post = invocation.getArgument(0);
+                    CommunityPost post = invocation.getArgument(0);
                     ReflectionTestUtils.setField(post, "postId", 1L);
                     return post;
                 });
@@ -159,9 +160,9 @@ class PostServiceTest {
 
         var response = postService.createPost(userId, createRequest("mate", null, null, "제주", 4));
 
-        ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
+        ArgumentCaptor<CommunityPost> captor = ArgumentCaptor.forClass(CommunityPost.class);
         verify(postRepository).save(captor.capture());
-        Post saved = captor.getValue();
+        CommunityPost saved = captor.getValue();
         assertThat(saved.getStatus()).isEqualTo(MateStatus.RECRUITING);
         assertThat(saved.getAuthorNickname()).isEqualTo("여행자");
         assertThat(saved.getRegion()).isEqualTo("제주");
@@ -186,7 +187,7 @@ class PostServiceTest {
     @Test
     @DisplayName("작성자가 아니면 게시글 수정이 거부된다")
     void updatePostByNonAuthor() {
-        Post post = freePost(userId);
+        CommunityPost post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         UUID otherUser = UUID.randomUUID();
@@ -200,7 +201,7 @@ class PostServiceTest {
     @Test
     @DisplayName("관리자는 작성자가 아니어도 게시글을 삭제할 수 있고 작성자 통계가 감소한다")
     void deletePostByAdmin() {
-        Post post = freePost(userId);
+        CommunityPost post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         postService.deletePost(UUID.randomUUID(), true, 1L);
@@ -212,7 +213,7 @@ class PostServiceTest {
     @Test
     @DisplayName("QnA가 아닌 게시글에 답변 완료 표시를 하면 INVALID_INPUT 예외가 발생한다")
     void updateAnsweredOnNonQnaPost() {
-        Post post = freePost(userId);
+        CommunityPost post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         assertThatThrownBy(() -> postService.updateAnswered(userId, 1L, true))
@@ -234,7 +235,7 @@ class PostServiceTest {
     @Test
     @DisplayName("상세 조회 시 조회수 등록과 myReaction 조회가 수행된다")
     void getPostRegistersViewAndMyReaction() {
-        Post post = freePost(userId);
+        CommunityPost post = freePost(userId);
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
         when(userClient.getAuthor(userId))
                 .thenReturn(Optional.of(new AuthorProfile("최신닉네임", "https://cdn.test/me.png", "hash123", false)));
@@ -431,8 +432,8 @@ class PostServiceTest {
     void createNonFeedPostIgnoresFeedFields() {
         when(userClient.getAuthor(userId)).thenReturn(Optional.of(author("여행자")));
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
-        when(postRepository.save(any(Post.class))).thenAnswer(invocation -> {
-            Post post = invocation.getArgument(0);
+        when(postRepository.save(any(CommunityPost.class))).thenAnswer(invocation -> {
+            CommunityPost post = invocation.getArgument(0);
             ReflectionTestUtils.setField(post, "postId", 1L);
             return post;
         });
@@ -445,9 +446,9 @@ class PostServiceTest {
 
         var response = postService.createPost(userId, request);
 
-        ArgumentCaptor<Post> captor = ArgumentCaptor.forClass(Post.class);
+        ArgumentCaptor<CommunityPost> captor = ArgumentCaptor.forClass(CommunityPost.class);
         verify(postRepository).save(captor.capture());
-        Post saved = captor.getValue();
+        CommunityPost saved = captor.getValue();
         assertThat(saved.getDurationDays()).isNull();
         assertThat(saved.getItinerary()).isNull();
         assertThat(saved.getTags()).isNull();
@@ -498,8 +499,8 @@ class PostServiceTest {
                 .containsExactly(new RegionCountResponse("서울", 3));
     }
 
-    private Post freePost(UUID authorId) {
-        Post post = Post.builder()
+    private CommunityPost freePost(UUID authorId) {
+        CommunityPost post = CommunityPost.builder()
                 .category(Category.FREE)
                 .userId(authorId)
                 .authorNickname("작성자")

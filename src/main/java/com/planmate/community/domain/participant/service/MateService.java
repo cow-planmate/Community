@@ -9,6 +9,7 @@ import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.domain.participant.dto.MateParticipationResponse;
 import com.planmate.community.domain.participant.entity.MateParticipant;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
+import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
@@ -108,17 +109,17 @@ public class MateService {
         return buildResponse(post, mateParticipantRepository.countByPostId(postId));
     }
 
-    private Post findMatePost(Long postId) {
+    private CommunityPost findMatePost(Long postId) {
         return requireMate(postRepository.findById(postId));
     }
 
     // 참여 처리용 — 게시글 행에 쓰기 락을 걸어 로드
-    private Post findMatePostForUpdate(Long postId) {
+    private CommunityPost findMatePostForUpdate(Long postId) {
         return requireMate(postRepository.findByIdForUpdate(postId));
     }
 
-    private Post requireMate(Optional<Post> found) {
-        Post post = found.orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
+    private CommunityPost requireMate(Optional<CommunityPost> found) {
+        CommunityPost post = found.orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
         if (post.getCategory() != Category.MATE) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "메이트 게시판 게시글이 아닙니다.");
         }
