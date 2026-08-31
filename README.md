@@ -1,7 +1,7 @@
 # PlanMate Community Service
 
 PlanMate 커뮤니티(자유게시판·Q&A·메이트 찾기·장소 추천)를 담당하는 **독립 마이크로서비스**.
-코드 규약은 [Backend-v2](https://github.com/cow-planmate/Backend-v2)를 미러한다 (ErrorCode/ErrorResponse, BaseTimeEntity/BaseSoftDeleteEntity, config/·security/ 레이아웃, jjwt 0.12.6).
+코드 규약은 [Backend-v2](https://github.com/cow-planmate/Backend-v2)를 미러한다 (ErrorCode/ErrorResponse, BaseTimeEntity/BaseSoftDeleteEntity, config/·security/ 레이아웃).
 
 ## 아키텍처
 
@@ -10,11 +10,11 @@ PlanMate 커뮤니티(자유게시판·Q&A·메이트 찾기·장소 추천)를 
      │                              │
      └────/api/* ───────────────────┴───────────▶ planmate-backend (레거시)
                                                      ▲ GET /api/internal/users?ids=  (X-Internal-Token)
-공유: Postgres 클러스터(별도 DB 'community') · Redis(키 prefix community:) · MinIO(버킷 community) · JWT access secret
+공유: Postgres 클러스터(별도 DB 'community') · Redis(키 prefix community:) · MinIO(버킷 community)
 ```
 
-- **인증**: 메인 백엔드가 발급한 JWT를 시크릿 공유로 **무상태 검증**. 키 파생은 `jwt.secret-encoding`으로 전환
-  (`base64` = 레거시 페어링(현재), `raw` = Backend-v2 페어링). 리프레시는 메인 백엔드 소관.
+- **인증**: Gateway가 access JWT를 검증하고 외부 동명 헤더를 제거한 뒤 `X-User-Id`,
+  `X-User-Role`을 전달한다. Community 포트는 외부에 공개하지 않는다.
 - **작성자 정보**: 글/댓글에 닉네임 스냅샷 저장 + 조회 시 내부 API(Redis 캐시 10분)로 최신 닉네임 병합.
   메인 백엔드 장애 시에도 스냅샷으로 읽기 경로 동작.
 - **레벨**: 커뮤니티 활동 기반 (`글×3 + 댓글` 점수 → 구간 [10,30,70,150) = Lv1~5), `community_user_stats` 소유.
@@ -35,7 +35,8 @@ PlanMate 커뮤니티(자유게시판·Q&A·메이트 찾기·장소 추천)를 
 | 내 활동 | `GET /me/posts`, `/me/liked`, `/me/comments`, `/me/stats` |
 | 이미지 | `POST /images` (multipart → MinIO 공개 URL, BlockNote uploadFile용) |
 
-GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <accessToken>`. Swagger: `/swagger-ui.html`.
+GET 목록/상세는 비로그인 허용하고, 외부 클라이언트는 Gateway에
+`Authorization: Bearer <accessToken>`을 보낸다. Swagger: `/swagger-ui.html`.
 
 ## 로컬 실행
 
@@ -45,8 +46,7 @@ GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <a
 # 더 이상 쓰지 않는다.
 # redis는 로컬 6379 재사용 (없어도 기동됨 — dedupe/캐시만 비활성)
 
-# JWT/MinIO/메인 백엔드 URL은 .env(gitignore)에 두면 bootRun이 자동 주입한다.
-# Backend-v2와 페어링할 때는 MAIN_BACKEND_JWKS=http://localhost:8090/.well-known/jwks.json.
+# MinIO/메인 백엔드 URL은 .env(gitignore)에 둔다. 사용자 요청은 로컬에서도 Gateway(:8085)를 거친다.
 ./gradlew bootRun             # :8081
 
 # 일회성 오버라이드
@@ -77,13 +77,13 @@ GET 목록/상세는 비로그인 허용, 나머지는 `Authorization: Bearer <a
    ```
    레거시 백엔드 Deployment에도 `INTERNAL_API_TOKEN` env(secretKeyRef planmate-secret)를 추가해야 함.
 3. **이미지**: `./gradlew build && docker build -t cycle123/planmate-community:latest . && docker push ...`
-4. **적용**: `kubectl apply -f k8s/` + `Backend/k8s/planmate-ingress.yaml` (경로 `/api/community` 추가본) 재적용.
+4. **적용**: `kubectl apply -f k8s/`. 외부 Ingress의 `/api/community`는 Community Service가
+   아니라 JWT 검증과 신원 헤더 재주입을 수행하는 Gateway로만 연결한다.
    `k8s/deployment.yaml`의 `SPRING_DATA_REDIS_HOST`는 클러스터 redis 마스터 Service 이름으로 맞출 것.
 
 ## Backend-v2 연동 (전환 완료)
 
-1. `MAIN_BACKEND_JWKS` → v2의 `/.well-known/jwks.json`. RS256 공개키만 받아 검증한다.
-   대칭키(`JWT_SECRET`) 공유는 2026-08-02 에 끊었고, HS 검증 경로는 2026-08-22 에 코드에서 제거했다.
+1. Gateway가 JWT를 검증하고 내부 신원 헤더를 전달한다. Community HTTP 포트는 외부에 열지 않는다.
 2. `MAIN_BACKEND_GRPC` → v2의 gRPC 서버(9090). 내부 사용자 API 는 gRPC 로 옮겼다.
 3. `INTERNAL_API_TOKEN` → v2 와 같은 값. 없거나 유출된 예시 값이면 `InternalTokenGuard` 가 기동을 막는다.
 

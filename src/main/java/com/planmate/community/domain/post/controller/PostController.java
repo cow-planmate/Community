@@ -134,7 +134,7 @@ public class PostController {
     /**
      * 비로그인도 허용되는 조회용 엔드포인트의 뷰어 id.
      * 토큰이 없으면 Spring이 AnonymousAuthenticationToken(getName()="anonymousUser")을 채워 넣으므로
-     * null 검사만으로는 부족하다 — JwtAuthenticationFilter가 principal에 UUID를 넣는다는 점으로 판별한다.
+     * null 검사만으로는 부족하다 — GatewayAuthenticationFilter가 principal에 UUID를 넣는다는 점으로 판별한다.
      */
     private static UUID viewerId(Authentication authentication) {
         return authentication != null && authentication.getPrincipal() instanceof UUID principal ? principal : null;
