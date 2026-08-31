@@ -26,7 +26,7 @@ CREATE TABLE feed_post (
     tags             JSONB,
     source_plan_id   UUID,
     fork_count       INT          NOT NULL DEFAULT 0 CHECK (fork_count >= 0),
-    -- TABLE_PER_CLASS 매핑에서 상속된 커뮤니티 전용 필드. FEED에서는 항상 NULL이다.
+    -- @MappedSuperclass Post 에서 딸려온 커뮤니티 전용 필드. FEED에서는 항상 NULL이며 V13 에서 제거한다.
     is_answered      BOOLEAN,
     max_participants INT,
     status           VARCHAR(16),

@@ -80,52 +80,17 @@ public abstract class Post extends BaseSoftDeleteEntity {
     @Builder.Default
     private int viewCount = 0;
 
-    // QNA 전용
-    @Column(name = "is_answered")
-    private Boolean isAnswered;
-
-    // MATE 전용
+    /** MATE 모집 지역이자 FEED 여행 지역 — 두 도메인이 함께 쓴다. */
     @Column(length = 100)
     private String region;
 
-    @Column(name = "max_participants")
-    private Integer maxParticipants;
-
-    @Enumerated(EnumType.STRING)
-    @Column(length = 16)
-    private MateStatus status;
-
-    // RECOMMEND 전용
+    /** RECOMMEND 대표 장소명이자 FEED 여행지 — 두 도메인이 함께 쓴다. */
     @Column(length = 255)
     private String location;
-
-    @Column(precision = 2, scale = 1)
-    private BigDecimal rating;
 
     private Double lat;
 
     private Double lng;
-
-    /** 카카오 로컬 검색으로 고른 장소의 부가 정보 — 직접 입력한 옛 글은 전부 null이다. */
-    @Column(name = "place_address", length = 255)
-    private String placeAddress;
-
-    @Column(name = "place_phone", length = 32)
-    private String placePhone;
-
-    @Column(name = "place_category", length = 255)
-    private String placeCategory;
-
-    @Column(name = "place_url", length = 512)
-    private String placeUrl;
-
-    /**
-     * 글에 담긴 장소 목록(JSON 배열). 첫 번째가 대표 장소이며 위의 location/lat/lng/place_* 에 미러링돼 있다.
-     * 장소가 하나뿐이던 시절의 옛 글은 null이고, 조회 측에서 대표 장소 한 건으로 취급한다.
-     */
-    @JdbcTypeCode(SqlTypes.JSON)
-    @Column(columnDefinition = "jsonb")
-    private String places;
 
     public boolean isAuthor(UUID userId) {
         return this.userId.equals(userId);
@@ -147,14 +112,6 @@ public abstract class Post extends BaseSoftDeleteEntity {
         this.lng = lng;
     }
 
-    public void changeStatus(MateStatus status) {
-        this.status = status;
-    }
-
-    public void markAnswered(boolean answered) {
-        this.isAnswered = answered;
-    }
-
     public void update(String title, String content, String contentText, String thumbnailUrl) {
         if (title != null && !title.isBlank()) {
             this.title = title;
@@ -165,62 +122,6 @@ public abstract class Post extends BaseSoftDeleteEntity {
         }
         if (thumbnailUrl != null) {
             this.thumbnailUrl = thumbnailUrl;
-        }
-    }
-
-    public void updateRecommendFields(String location, BigDecimal rating, Double lat, Double lng,
-                                      String placeAddress, String placePhone, String placeCategory, String placeUrl) {
-        if (location != null && !location.isBlank()) {
-            this.location = location;
-        }
-        if (rating != null) {
-            this.rating = rating;
-        }
-        if (lat != null) {
-            this.lat = lat;
-        }
-        if (lng != null) {
-            this.lng = lng;
-        }
-        // 장소를 다시 고르면 부가 정보도 통째로 따라와야 한다. 옛 장소의 전화번호가 남으면 틀린 정보가 된다.
-        if (placeAddress != null) {
-            this.placeAddress = placeAddress;
-            this.placePhone = placePhone;
-            this.placeCategory = placeCategory;
-            this.placeUrl = placeUrl;
-        }
-    }
-
-    /**
-     * 장소 목록 교체. 대표 장소(첫 번째)는 부분 갱신이 아니라 통째로 덮어쓴다 —
-     * 장소를 지우고 다시 고른 뒤 옛 장소의 주소·전화번호가 남으면 그대로 틀린 정보가 되기 때문이다.
-     *
-     * @param places 직렬화된 JSON 배열 (null이면 장소 목록을 비운다)
-     */
-    public void updateRecommendPlaces(String places, RecommendPlaceSnapshot representative) {
-        this.places = places;
-        if (representative != null) {
-            this.location = representative.name();
-            this.lat = representative.lat();
-            this.lng = representative.lng();
-            this.placeAddress = representative.address();
-            this.placePhone = representative.phone();
-            this.placeCategory = representative.category();
-            this.placeUrl = representative.url();
-        }
-    }
-
-    /** 대표 장소 미러링에 필요한 값만 추린 것 — 엔티티가 DTO를 알지 않도록 별도로 둔다 */
-    public record RecommendPlaceSnapshot(String name, String address, String phone, String category, String url,
-                                         Double lat, Double lng) {
-    }
-
-    public void updateMateFields(String region, Integer maxParticipants) {
-        if (region != null && !region.isBlank()) {
-            this.region = region;
-        }
-        if (maxParticipants != null) {
-            this.maxParticipants = maxParticipants;
         }
     }
 
@@ -235,6 +136,45 @@ public abstract class Post extends BaseSoftDeleteEntity {
             throw new IllegalStateException("피드 게시글이 아닙니다.");
         }
         feedPost.updateFeed(region, location, durationDays, itinerary, itineraryChanged, tags, tagsChanged);
+    }
+
+    // 아래 접근자들은 상대 도메인 전용 필드의 기본값이다 — 조회 DTO 하나가 두 도메인을 함께 다루므로
+    // 자기 도메인이 아닌 필드는 null(또는 0)로 답하고, 해당 도메인 엔티티가 실제 필드로 오버라이드한다.
+
+    public Boolean getIsAnswered() {
+        return null;
+    }
+
+    public Integer getMaxParticipants() {
+        return null;
+    }
+
+    public MateStatus getStatus() {
+        return null;
+    }
+
+    public BigDecimal getRating() {
+        return null;
+    }
+
+    public String getPlaceAddress() {
+        return null;
+    }
+
+    public String getPlacePhone() {
+        return null;
+    }
+
+    public String getPlaceCategory() {
+        return null;
+    }
+
+    public String getPlaceUrl() {
+        return null;
+    }
+
+    public String getPlaces() {
+        return null;
     }
 
     public Integer getDurationDays() {
@@ -255,6 +195,24 @@ public abstract class Post extends BaseSoftDeleteEntity {
 
     public int getForkCount() {
         return 0;
+    }
+
+    /** 공용 위치 필드는 Post 가 소유하므로, 도메인별 갱신은 이 훅을 통해 들어온다. */
+    protected void applyRegion(String region) {
+        if (region != null && !region.isBlank()) this.region = region;
+    }
+
+    protected void applyLocation(String location, Double lat, Double lng) {
+        if (location != null && !location.isBlank()) this.location = location;
+        if (lat != null) this.lat = lat;
+        if (lng != null) this.lng = lng;
+    }
+
+    /** 대표 장소 교체 — 옛 값이 남지 않도록 null 도 그대로 덮어쓴다. */
+    protected void replaceLocation(String location, Double lat, Double lng) {
+        this.location = location;
+        this.lat = lat;
+        this.lng = lng;
     }
 
     protected void updateFeedLocation(String region, String location) {
