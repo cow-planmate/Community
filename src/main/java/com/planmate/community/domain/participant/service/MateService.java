@@ -10,7 +10,6 @@ import com.planmate.community.domain.participant.dto.MateParticipationResponse;
 import com.planmate.community.domain.participant.entity.MateParticipant;
 import com.planmate.community.domain.participant.repository.MateParticipantRepository;
 import com.planmate.community.domain.post.entity.CommunityPost;
-import com.planmate.community.domain.post.entity.Post;
 import com.planmate.community.domain.post.enums.Category;
 import com.planmate.community.domain.post.enums.MateStatus;
 import com.planmate.community.domain.post.repository.PostRepository;
@@ -39,7 +38,7 @@ public class MateService {
     @Transactional
     public MateParticipationResponse join(UUID userId, Long postId) {
         // 게시글 행을 잠그고 검사 → 저장을 직렬화해 동시 참여로 정원이 초과되는 경합을 방지
-        Post post = findMatePostForUpdate(postId);
+        CommunityPost post = findMatePostForUpdate(postId);
 
         if (post.getStatus() == MateStatus.CLOSED) {
             throw new CommunityException(ErrorCode.MATE_CLOSED);
@@ -76,7 +75,7 @@ public class MateService {
 
     @Transactional
     public MateParticipationResponse leave(UUID userId, Long postId) {
-        Post post = findMatePost(postId);
+        CommunityPost post = findMatePost(postId);
 
         MateParticipant participant = mateParticipantRepository.findByPostIdAndUserId(postId, userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.MATE_NOT_JOINED));
@@ -93,7 +92,7 @@ public class MateService {
      */
     @Transactional
     public MateParticipationResponse changeStatus(UUID userId, Long postId, String statusValue) {
-        Post post = findMatePost(postId);
+        CommunityPost post = findMatePost(postId);
         if (!post.isAuthor(userId)) {
             throw new CommunityException(ErrorCode.POST_ACCESS_DENIED);
         }
@@ -126,7 +125,7 @@ public class MateService {
         return post;
     }
 
-    private MateParticipationResponse buildResponse(Post post, long participants) {
+    private MateParticipationResponse buildResponse(CommunityPost post, long participants) {
         return new MateParticipationResponse(
                 (int) Math.max(participants, 0),
                 post.getMaxParticipants(),

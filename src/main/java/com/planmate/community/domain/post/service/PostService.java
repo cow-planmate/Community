@@ -261,25 +261,28 @@ public class PostService {
                 request.thumbnailUrl()
         );
 
-        if (post.getCategory() == Category.RECOMMEND) {
-            if (request.rating() != null) {
-                validateRating(request.rating());
-            }
-            post.updateRecommendFields(request.location(), request.rating(), request.lat(), request.lng(),
-                    request.placeAddress(), request.placePhone(), request.placeCategory(), request.placeUrl());
-            // places는 넘어온 경우에만 통째로 교체한다 (null = 변경 없음). 대표 장소도 함께 덮어쓴다.
-            if (request.places() != null) {
-                List<RecommendPlace> places = normalizePlaces(request.places());
-                if (places.isEmpty()) {
-                    throw new CommunityException(ErrorCode.INVALID_INPUT, "장소를 최소 한 곳 이상 남겨주세요.");
+        // RECOMMEND/MATE 전용 필드는 CommunityPost 만 갖는다 — 피드는 이 블록에 들어오지 않는다.
+        if (post instanceof CommunityPost community) {
+            if (community.getCategory() == Category.RECOMMEND) {
+                if (request.rating() != null) {
+                    validateRating(request.rating());
                 }
-                post.updateRecommendPlaces(writeJson(places), snapshotOf(places.get(0)));
-                // 장소 평점이 바뀌면 글 평점(평균)도 따라 바뀐다
-                post.updateRecommendFields(null, averageRating(places), null, null, null, null, null, null);
+                community.updateRecommendFields(request.location(), request.rating(), request.lat(), request.lng(),
+                        request.placeAddress(), request.placePhone(), request.placeCategory(), request.placeUrl());
+                // places는 넘어온 경우에만 통째로 교체한다 (null = 변경 없음). 대표 장소도 함께 덮어쓴다.
+                if (request.places() != null) {
+                    List<RecommendPlace> places = normalizePlaces(request.places());
+                    if (places.isEmpty()) {
+                        throw new CommunityException(ErrorCode.INVALID_INPUT, "장소를 최소 한 곳 이상 남겨주세요.");
+                    }
+                    community.updateRecommendPlaces(writeJson(places), snapshotOf(places.get(0)));
+                    // 장소 평점이 바뀌면 글 평점(평균)도 따라 바뀐다
+                    community.updateRecommendFields(null, averageRating(places), null, null, null, null, null, null);
+                }
             }
-        }
-        if (post.getCategory() == Category.MATE) {
-            post.updateMateFields(request.region(), request.maxParticipants());
+            if (community.getCategory() == Category.MATE) {
+                community.updateMateFields(request.region(), request.maxParticipants());
+            }
         }
         if (post.getCategory() == Category.FEED) {
             if (request.durationDays() != null && request.durationDays() < 1) {
@@ -344,7 +347,7 @@ public class PostService {
      */
     @Transactional
     public PostDetailResponse updateAnswered(UUID userId, Long postId, boolean answered) {
-        Post post = findPost(postId);
+        CommunityPost post = findPost(postId);
         postAccessValidator.validateAuthor(post, userId);
         if (post.getCategory() != Category.QNA) {
             throw new CommunityException(ErrorCode.INVALID_INPUT, "QnA 게시판 게시글이 아닙니다.");
@@ -372,7 +375,7 @@ public class PostService {
         deleteImagesAfterCommit(collectImageUrls(post));
     }
 
-    private Post findPost(Long postId) {
+    private CommunityPost findPost(Long postId) {
         return postRepository.findById(postId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.POST_NOT_FOUND));
     }
@@ -459,8 +462,8 @@ public class PostService {
         return sum.divide(BigDecimal.valueOf(ratings.size()), 1, java.math.RoundingMode.HALF_UP);
     }
 
-    private Post.RecommendPlaceSnapshot snapshotOf(RecommendPlace place) {
-        return new Post.RecommendPlaceSnapshot(place.name(), place.address(), place.phone(), place.category(),
+    private CommunityPost.RecommendPlaceSnapshot snapshotOf(RecommendPlace place) {
+        return new CommunityPost.RecommendPlaceSnapshot(place.name(), place.address(), place.phone(), place.category(),
                 place.url(), place.lat(), place.lng());
     }
 
