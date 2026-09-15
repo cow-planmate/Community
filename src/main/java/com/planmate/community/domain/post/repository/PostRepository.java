@@ -126,6 +126,13 @@ public interface PostRepository extends JpaRepository<CommunityPost, Long> {
     @Query("UPDATE CommunityPost p SET p.viewCount = p.viewCount + :delta WHERE p.postId = :postId")
     void addViewCount(@Param("postId") Long postId, @Param("delta") long delta);
 
+    // 탈퇴 시점에 옛 닉네임 스냅샷을 지운다 — AuthorProfile.resolve()가 모든 조회 경로가
+    // 실패했을 때만 이 스냅샷으로 fallback하므로, 여기서 미리 비워두면 그 fallback을 타도
+    // 더 이상 진짜 닉네임이 나오지 않는다.
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE CommunityPost p SET p.authorNickname = :nickname WHERE p.userId = :userId")
+    void scrubAuthorNickname(@Param("userId") UUID userId, @Param("nickname") String nickname);
+
     interface RegionCount {
         String getRegion();
 

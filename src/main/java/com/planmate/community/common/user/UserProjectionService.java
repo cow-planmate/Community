@@ -2,6 +2,11 @@ package com.planmate.community.common.user;
 
 import build.buf.gen.planmate.internal.v1.InternalUser;
 import build.buf.gen.planmate.internal.v1.WatchUserChangesResponse;
+import com.planmate.community.common.client.AuthorProfile;
+import com.planmate.community.domain.comment.repository.CommentRepository;
+import com.planmate.community.domain.comment.repository.FeedCommentRepository;
+import com.planmate.community.domain.post.repository.FeedPostRepository;
+import com.planmate.community.domain.post.repository.PostRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -30,6 +35,10 @@ public class UserProjectionService {
 
     private final ReplicatedUserRepository userRepository;
     private final UserReplicationStateRepository stateRepository;
+    private final PostRepository postRepository;
+    private final FeedPostRepository feedPostRepository;
+    private final CommentRepository commentRepository;
+    private final FeedCommentRepository feedCommentRepository;
 
     /**
      * 복제본이 쓸 만한 상태인지. 여기서 false 면 신규 필터를 끄고 공개 여부는 원격 조회로
@@ -68,14 +77,18 @@ public class UserProjectionService {
         long maxSeq = 0;
         for (WatchUserChangesResponse event : batch) {
             InternalUser user = event.getUser();
+            UUID userId = UUID.fromString(event.getUserId());
             userRepository.upsert(
-                    UUID.fromString(event.getUserId()),
+                    userId,
                     nullIfEmpty(user.getNickname()),
                     nullIfEmpty(user.getProfileImageUrl()),
                     nullIfEmpty(user.getAvatarHash()),
                     user.getProfilePublic(),
                     user.getDeleted(),
                     event.getSequence());
+            if (user.getDeleted()) {
+                scrubAuthorNickname(userId);
+            }
             maxSeq = Math.max(maxSeq, event.getSequence());
         }
 
@@ -89,6 +102,23 @@ public class UserProjectionService {
     public void completeSnapshot(long seq) {
         stateRepository.completeSnapshot(seq);
         log.info("사용자 읽기 모델 초기 복제 완료 (커서={})", seq);
+    }
+
+    /**
+     * 탈퇴 계정이 쓴 글/댓글의 옛 닉네임 스냅샷을 지운다.
+     *
+     * <p>{@code AuthorProfile.resolve()}는 로컬 복제본(이 upsert)과 실시간 조회가 둘 다 실패했을 때만
+     * 게시글/댓글에 저장된 닉네임 스냅샷으로 fallback한다. 평소엔 이 upsert 만으로 "탈퇴한 사용자"가
+     * 정확히 표시되지만, 커뮤니티 읽기 모델을 통째로 재구축(재해복구 등)하면 이미 하드 삭제된 유저는
+     * Backend-v2 쪽에도 행이 없어 새 스냅샷에 아예 안 들어가고, 그 상태에서 fallback이 발동하면
+     * 스냅샷에 남아있던 진짜 옛 닉네임이 다시 노출된다. 탈퇴 시점에 스냅샷 자체를 미리 지워두면
+     * fallback이 언제 발동하든 안전한 값만 남는다(project_ai/04_기능/마이페이지/C_계정_관리_하드삭제_전환.md 2-3절).
+     */
+    private void scrubAuthorNickname(UUID userId) {
+        postRepository.scrubAuthorNickname(userId, AuthorProfile.DELETED_NICKNAME);
+        feedPostRepository.scrubAuthorNickname(userId, AuthorProfile.DELETED_NICKNAME);
+        commentRepository.scrubAuthorNickname(userId, AuthorProfile.DELETED_NICKNAME);
+        feedCommentRepository.scrubAuthorNickname(userId, AuthorProfile.DELETED_NICKNAME);
     }
 
     private Optional<UserReplicationState> state() {
