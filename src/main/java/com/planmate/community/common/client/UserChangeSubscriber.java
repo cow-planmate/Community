@@ -120,7 +120,11 @@ public class UserChangeSubscriber {
             }
 
             buffer.add(event);
-            if (buffer.size() >= BATCH_SIZE) {
+            // 탈퇴는 즉시 flush한다 — 다른 필드 변경은 지연돼도 재연결 시 최신값으로 다시
+            // 수렴하지만, 탈퇴는 유일하게 "현재 상태"가 사라지는 이벤트라 지연 중 연결이
+            // 끊기고 커서가 보존 기간 밖(스냅샷 격하 구간)이면 이후 재스냅샷에도 아예 안 잡혀
+            // 영구히 놓친다(하드 삭제된 행은 재스냅샷 대상에 없음). 나머지는 지금처럼 배치로 묶는다.
+            if (buffer.size() >= BATCH_SIZE || event.getUser().getDeleted()) {
                 flush();
             }
         }
