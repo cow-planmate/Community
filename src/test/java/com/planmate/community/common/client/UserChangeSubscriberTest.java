@@ -36,6 +36,7 @@ import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
+import static org.mockito.Mockito.after;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
@@ -100,6 +101,16 @@ class UserChangeSubscriberTest {
                 .build();
     }
 
+    private static WatchUserChangesResponse deletedChange(UUID userId, long seq) {
+        return WatchUserChangesResponse.newBuilder()
+                .setUserId(userId.toString())
+                .setSequence(seq)
+                .setUser(InternalUser.newBuilder()
+                        .setUserId(userId.toString())
+                        .setDeleted(true))
+                .build();
+    }
+
     @Test
     @DisplayName("저장된 커서를 실어 보내 끊긴 지점부터 이어받는다")
     void resumesFromStoredCursor() {
@@ -126,6 +137,34 @@ class UserChangeSubscriberTest {
 
         // 스냅샷이 끝난 뒤이므로 커서를 함께 전진시킨다
         verify(projectionService, timeout(2000)).applyBatch(anyList(), eq(true));
+    }
+
+    @Test
+    @DisplayName("탈퇴 이벤트는 스트림 종료나 배치 200개를 기다리지 않고 즉시 반영된다")
+    void flushesImmediatelyOnDeletedEvent() {
+        given(projectionService.isReady()).willReturn(true);
+        subscriber.subscribe();
+        await().atMost(2, TimeUnit.SECONDS).until(() -> !observers.isEmpty());
+
+        StreamObserver<WatchUserChangesResponse> observer = observers.get(0);
+        // onCompleted()를 일부러 안 부른다 — 스트림 종료 없이도 탈퇴 하나만으로 flush돼야 한다
+        observer.onNext(deletedChange(UUID.randomUUID(), 9L));
+
+        verify(projectionService, timeout(2000)).applyBatch(anyList(), eq(true));
+    }
+
+    @Test
+    @DisplayName("탈퇴가 아닌 변경은 200개가 안 차면 스트림이 끝나기 전까지 반영을 미룬다")
+    void doesNotFlushImmediatelyOnNonDeletedEvent() {
+        given(projectionService.isReady()).willReturn(true);
+        subscriber.subscribe();
+        await().atMost(2, TimeUnit.SECONDS).until(() -> !observers.isEmpty());
+
+        StreamObserver<WatchUserChangesResponse> observer = observers.get(0);
+        observer.onNext(change(UUID.randomUUID(), 10L, "닉네임"));
+
+        // 즉시 flush 대상이 아니므로, 짧게 기다려도 여전히 반영되지 않은 채여야 한다
+        verify(projectionService, after(500).never()).applyBatch(anyList(), anyBoolean());
     }
 
     @Test

@@ -62,4 +62,9 @@ public interface FeedPostRepository extends JpaRepository<FeedPost, Long> {
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query("UPDATE FeedPost p SET p.viewCount = p.viewCount + :delta WHERE p.postId = :postId")
     void addViewCount(Long postId, long delta);
+
+    // 탈퇴 시점에 옛 닉네임 스냅샷을 지운다 — PostRepository.scrubAuthorNickname 과 같은 이유
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE FeedPost p SET p.authorNickname = :nickname WHERE p.userId = :userId")
+    void scrubAuthorNickname(@Param("userId") UUID userId, @Param("nickname") String nickname);
 }
