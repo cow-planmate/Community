@@ -41,7 +41,6 @@ public record PostSummaryResponse(
 
         // RECOMMEND 전용
         String location,
-        String rating,
         Coords coords,
 
         // FEED 전용 (비-FEED는 null로 응답에서 생략)
@@ -105,7 +104,6 @@ public record PostSummaryResponse(
                 post.getStatus() != null ? post.getStatus().toLowerValue() : null,
                 post.getRegion(),
                 post.getLocation(),
-                post.getRating() != null ? post.getRating().toPlainString() : null,
                 post.getLat() != null && post.getLng() != null ? new Coords(post.getLat(), post.getLng()) : null,
                 post.getDurationDays(),
                 post.getCategory() == Category.FEED ? post.getForkCount() : null,
@@ -121,7 +119,7 @@ public record PostSummaryResponse(
         return new PostSummaryResponse(
                 id, userId, category, title, author, authorImage, authorAvatarHash, authorDeleted, level, likes, dislikes, comments,
                 views, createdAt, image,
-                isAnswered, participants, maxParticipants, status, region, location, rating, coords,
+                isAnswered, participants, maxParticipants, status, region, location, coords,
                 durationDays, forks, tags, description, placeCount, placesByDay, actedAt
         );
     }

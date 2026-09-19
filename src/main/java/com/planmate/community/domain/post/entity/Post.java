@@ -19,7 +19,6 @@ import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.annotations.GenericGenerator;
 import org.hibernate.type.SqlTypes;
 
-import java.math.BigDecimal;
 import java.util.UUID;
 
 /**
@@ -150,30 +149,6 @@ public abstract class Post extends BaseSoftDeleteEntity {
     }
 
     public MateStatus getStatus() {
-        return null;
-    }
-
-    public BigDecimal getRating() {
-        return null;
-    }
-
-    public String getPlaceAddress() {
-        return null;
-    }
-
-    public String getPlacePhone() {
-        return null;
-    }
-
-    public String getPlaceCategory() {
-        return null;
-    }
-
-    public String getPlaceUrl() {
-        return null;
-    }
-
-    public String getPlaces() {
         return null;
     }
 

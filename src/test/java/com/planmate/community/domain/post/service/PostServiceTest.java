@@ -125,10 +125,10 @@ class PostServiceTest {
                 });
     }
 
-    private PostCreateRequest createRequest(String category, String location, BigDecimal rating, String region, Integer maxParticipants) {
+    private PostCreateRequest createRequest(String category, String location, String region, Integer maxParticipants) {
         return new PostCreateRequest(
                 category, "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                location, rating, null, null, null, null, null, null, null,
+                location, null, null,
                 region, maxParticipants,
                 null, null, null, null);
     }
@@ -136,19 +136,9 @@ class PostServiceTest {
     private PostCreateRequest feedRequest(String region, Integer durationDays, JsonNode itinerary, List<String> tags) {
         return new PostCreateRequest(
                 "feed", "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                null, null, null, null, null, null, null, null, null,
+                null, null, null,
                 region, null,
                 durationDays, itinerary, tags, null);
-    }
-
-    @Test
-    @DisplayName("추천 게시글은 위치가 없으면 INVALID_INPUT 예외가 발생한다")
-    void createRecommendPostWithoutLocation() {
-        assertThatThrownBy(() -> postService.createPost(userId, createRequest("recommend", null, BigDecimal.valueOf(4.5), null, null)))
-                .isInstanceOf(CommunityException.class)
-                .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INVALID_INPUT))
-                .hasMessageContaining("위치");
-        verify(postRepository, never()).save(any());
     }
 
     @Test
@@ -158,7 +148,7 @@ class PostServiceTest {
         when(userStatsRepository.findById(userId)).thenReturn(Optional.empty());
         when(mateParticipantRepository.countByPostId(1L)).thenReturn(0L);
 
-        var response = postService.createPost(userId, createRequest("mate", null, null, "제주", 4));
+        var response = postService.createPost(userId, createRequest("mate", null, "제주", 4));
 
         ArgumentCaptor<CommunityPost> captor = ArgumentCaptor.forClass(CommunityPost.class);
         verify(postRepository).save(captor.capture());
@@ -178,7 +168,7 @@ class PostServiceTest {
     void createPostWithoutUserInfo() {
         when(userClient.getAuthor(userId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> postService.createPost(userId, createRequest("free", null, null, null, null)))
+        assertThatThrownBy(() -> postService.createPost(userId, createRequest("free", null, null, null)))
                 .isInstanceOf(CommunityException.class)
                 .satisfies(e -> assertThat(((CommunityException) e).getErrorCode()).isEqualTo(ErrorCode.INTERNAL_SERVER_ERROR));
         verify(postRepository, never()).save(any());
@@ -191,7 +181,7 @@ class PostServiceTest {
         when(postRepository.findById(1L)).thenReturn(Optional.of(post));
 
         UUID otherUser = UUID.randomUUID();
-        PostUpdateRequest request = new PostUpdateRequest("새 제목", null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null, null);
+        PostUpdateRequest request = new PostUpdateRequest("새 제목", null, null, null, null, null, null, null, null, null, null, null);
 
         assertThatThrownBy(() -> postService.updatePost(otherUser, 1L, request))
                 .isInstanceOf(CommunityException.class)
@@ -440,7 +430,7 @@ class PostServiceTest {
 
         PostCreateRequest request = new PostCreateRequest(
                 "free", "제목", objectMapper.createObjectNode(), "본문 텍스트", null,
-                null, null, null, null, null, null, null, null, null,
+                null, null, null,
                 null, null,
                 3, objectMapper.createObjectNode(), List.of("#태그"), UUID.randomUUID());
 
