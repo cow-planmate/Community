@@ -118,10 +118,10 @@ class MyActivityServiceTest {
     void getMyPostsWithMultipleCategories() {
         stubAssembler();
         when(postRepository.findByUserIdAndCategoryInOrderByCreatedAtDesc(
-                eq(userId), eq(List.of(Category.FREE, Category.QNA, Category.MATE, Category.RECOMMEND)), any(Pageable.class)))
+                eq(userId), eq(List.of(Category.FREE, Category.QNA, Category.MATE)), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of()));
 
-        myActivityService.getMyPosts(userId, "free,qna,mate,recommend", 0, 20);
+        myActivityService.getMyPosts(userId, "free,qna,mate", 0, 20);
 
         verify(postRepository, never()).findByUserIdOrderByCreatedAtDesc(any(), any());
     }
