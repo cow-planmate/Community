@@ -16,7 +16,6 @@ import com.planmate.community.domain.post.dto.PostCreateRequest;
 import com.planmate.community.domain.post.dto.PostDetailResponse;
 import com.planmate.community.domain.post.dto.PostSummaryResponse;
 import com.planmate.community.domain.post.dto.PostUpdateRequest;
-import com.planmate.community.domain.post.dto.RecommendPlace;
 import com.planmate.community.domain.post.dto.RegionCountResponse;
 import com.planmate.community.domain.post.entity.CommunityPost;
 import com.planmate.community.domain.post.entity.Post;
@@ -78,10 +77,6 @@ public class PostService {
         AuthorProfile author = userClient.getAuthor(userId)
                 .orElseThrow(() -> new CommunityException(ErrorCode.INTERNAL_SERVER_ERROR, "사용자 정보를 가져올 수 없습니다."));
 
-        // 장소 목록이 오면 대표 장소(첫 번째)가 단일 장소 필드를 대신한다 — 두 곳에 서로 다른 값이 남지 않도록
-        List<RecommendPlace> places = category == Category.RECOMMEND ? normalizePlaces(request.places()) : List.of();
-        RecommendPlace head = places.isEmpty() ? null : places.get(0);
-
         Post post = category == Category.FEED
                 ? FeedPost.create(userId, author.nickname(), request.title(), writeContent(request.content()),
                         request.contentText() != null ? request.contentText() : "", request.thumbnailUrl(),
@@ -101,18 +96,6 @@ public class PostService {
                 .region(category == Category.MATE ? request.region() : null)
                 .maxParticipants(category == Category.MATE ? request.maxParticipants() : null)
                 .status(category == Category.MATE ? MateStatus.RECRUITING : null)
-                .location(head != null ? head.name()
-                        : category == Category.RECOMMEND ? request.location() : null)
-                .rating(category == Category.RECOMMEND
-                        ? (averageRating(places) != null ? averageRating(places) : request.rating())
-                        : null)
-                .lat(head != null ? head.lat() : category == Category.RECOMMEND ? request.lat() : null)
-                .lng(head != null ? head.lng() : category == Category.RECOMMEND ? request.lng() : null)
-                .placeAddress(head != null ? head.address() : category == Category.RECOMMEND ? request.placeAddress() : null)
-                .placePhone(head != null ? head.phone() : category == Category.RECOMMEND ? request.placePhone() : null)
-                .placeCategory(head != null ? head.category() : category == Category.RECOMMEND ? request.placeCategory() : null)
-                .placeUrl(head != null ? head.url() : category == Category.RECOMMEND ? request.placeUrl() : null)
-                .places(places.isEmpty() ? null : writeJson(places))
                 .build();
 
         Post saved = post instanceof FeedPost feed
@@ -261,25 +244,8 @@ public class PostService {
                 request.thumbnailUrl()
         );
 
-        // RECOMMEND/MATE 전용 필드는 CommunityPost 만 갖는다 — 피드는 이 블록에 들어오지 않는다.
+        // MATE 전용 필드는 CommunityPost 만 갖는다 — 피드는 이 블록에 들어오지 않는다.
         if (post instanceof CommunityPost community) {
-            if (community.getCategory() == Category.RECOMMEND) {
-                if (request.rating() != null) {
-                    validateRating(request.rating());
-                }
-                community.updateRecommendFields(request.location(), request.rating(), request.lat(), request.lng(),
-                        request.placeAddress(), request.placePhone(), request.placeCategory(), request.placeUrl());
-                // places는 넘어온 경우에만 통째로 교체한다 (null = 변경 없음). 대표 장소도 함께 덮어쓴다.
-                if (request.places() != null) {
-                    List<RecommendPlace> places = normalizePlaces(request.places());
-                    if (places.isEmpty()) {
-                        throw new CommunityException(ErrorCode.INVALID_INPUT, "장소를 최소 한 곳 이상 남겨주세요.");
-                    }
-                    community.updateRecommendPlaces(writeJson(places), snapshotOf(places.get(0)));
-                    // 장소 평점이 바뀌면 글 평점(평균)도 따라 바뀐다
-                    community.updateRecommendFields(null, averageRating(places), null, null, null, null, null, null);
-                }
-            }
             if (community.getCategory() == Category.MATE) {
                 community.updateMateFields(request.region(), request.maxParticipants());
             }
@@ -412,76 +378,7 @@ public class PostService {
         return value == null || value.isBlank() ? null : value.trim();
     }
 
-    /** 한 글에 담을 수 있는 장소 수 상한 — 지도에 마커를 뿌리고 목록으로 훑는 화면이 감당할 수 있는 선 */
-    private static final int MAX_PLACES = 30;
-
-    /**
-     * 이름 없는 항목을 걷어내고 같은 장소(이름+좌표)의 중복을 없앤다.
-     * 순서는 작성자가 넣은 그대로 유지한다 — 상세 화면의 번호가 곧 작성자가 의도한 동선이다.
-     */
-    private List<RecommendPlace> normalizePlaces(List<RecommendPlace> places) {
-        if (places == null || places.isEmpty()) {
-            return List.of();
-        }
-        if (places.size() > MAX_PLACES) {
-            throw new CommunityException(ErrorCode.INVALID_INPUT, "장소는 최대 " + MAX_PLACES + "곳까지 담을 수 있습니다.");
-        }
-        Set<String> seen = new LinkedHashSet<>();
-        List<RecommendPlace> result = new ArrayList<>();
-        for (RecommendPlace place : places) {
-            String name = normalizeBlank(place.name());
-            if (name == null) {
-                continue;
-            }
-            if (!seen.add(name + "@" + place.lat() + "," + place.lng())) {
-                continue;
-            }
-            if (place.rating() != null) {
-                validateRating(place.rating());
-            }
-            result.add(new RecommendPlace(name, normalizeBlank(place.address()), normalizeBlank(place.phone()),
-                    normalizeBlank(place.category()), normalizeBlank(place.url()), place.lat(), place.lng(),
-                    normalizeBlank(place.memo()), place.rating()));
-        }
-        return result;
-    }
-
-    /**
-     * 글 전체 평점 = 장소별 평점의 평균.
-     *
-     * 장소마다 평점을 매기게 한 뒤에도 글 하나에 대표 평점이 하나 필요하다(목록 배지·정렬).
-     * 작성자에게 "글 평점"을 따로 또 물으면 장소 평점과 어긋난 값이 남을 수 있어 평균으로 정한다.
-     * 평점을 하나도 안 매겼으면 null — 호출부가 요청의 rating 으로 떨어진다.
-     */
-    private BigDecimal averageRating(List<RecommendPlace> places) {
-        List<BigDecimal> ratings = places.stream().map(RecommendPlace::rating).filter(java.util.Objects::nonNull).toList();
-        if (ratings.isEmpty()) {
-            return null;
-        }
-        BigDecimal sum = ratings.stream().reduce(BigDecimal.ZERO, BigDecimal::add);
-        return sum.divide(BigDecimal.valueOf(ratings.size()), 1, java.math.RoundingMode.HALF_UP);
-    }
-
-    private CommunityPost.RecommendPlaceSnapshot snapshotOf(RecommendPlace place) {
-        return new CommunityPost.RecommendPlaceSnapshot(place.name(), place.address(), place.phone(), place.category(),
-                place.url(), place.lat(), place.lng());
-    }
-
     private void validateCategoryFields(Category category, PostCreateRequest request) {
-        if (category == Category.RECOMMEND) {
-            // 장소 목록이 오면 그 첫 번째가 위치가 되므로 location은 없어도 된다
-            if (normalizePlaces(request.places()).isEmpty()
-                    && (request.location() == null || request.location().isBlank())) {
-                throw new CommunityException(ErrorCode.INVALID_INPUT, "추천 게시글은 위치 정보가 필수입니다.");
-            }
-            // 장소마다 평점을 매겼으면 글 평점은 그 평균으로 채워진다 — 따로 받지 않아도 된다
-            if (request.rating() == null && averageRating(normalizePlaces(request.places())) == null) {
-                throw new CommunityException(ErrorCode.INVALID_INPUT, "추천 게시글은 평점이 필수입니다.");
-            }
-            if (request.rating() != null) {
-                validateRating(request.rating());
-            }
-        }
         if (category == Category.MATE) {
             if (request.region() == null || request.region().isBlank()) {
                 throw new CommunityException(ErrorCode.INVALID_INPUT, "메이트 게시글은 지역 정보가 필수입니다.");
@@ -575,12 +472,6 @@ public class PostService {
 
     private boolean isBlankText(JsonNode node) {
         return node == null || !node.isTextual() || node.asText().isBlank();
-    }
-
-    private void validateRating(BigDecimal rating) {
-        if (rating.compareTo(BigDecimal.ZERO) < 0 || rating.compareTo(BigDecimal.valueOf(5)) > 0) {
-            throw new CommunityException(ErrorCode.INVALID_INPUT, "평점은 0.0에서 5.0 사이여야 합니다.");
-        }
     }
 
     private String writeContent(JsonNode content) {
