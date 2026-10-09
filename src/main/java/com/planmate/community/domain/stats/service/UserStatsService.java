@@ -32,6 +32,20 @@ public class UserStatsService {
         badgeProgressService.refreshPostBadges(userId);
     }
 
+    /** 보관 기간 안에서 되살린 글 — recordPostDeleted 의 역연산 */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordPostRestored(UUID userId) {
+        applyDelta(userId, 1, 0);
+        badgeProgressService.refreshPostBadges(userId);
+    }
+
+    /** 영구 삭제로 사라진 살아 있던 댓글 수만큼 작성자의 댓글 수를 줄인다 */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public void recordCommentsPurged(UUID userId, int count) {
+        applyDelta(userId, 0, -count);
+        badgeProgressService.refreshCommentBadges(userId);
+    }
+
     @Transactional(propagation = Propagation.MANDATORY)
     public void recordCommentCreated(UUID userId) {
         applyDelta(userId, 0, 1);

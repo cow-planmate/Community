@@ -43,6 +43,7 @@ public class SecurityConfig {
                         .requestMatchers(SecurityWhitelist.PATHS.toArray(new String[0])).permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/community/posts/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/feed/posts/**").permitAll()
+                        .requestMatchers("/api/community/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(gatewayAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(exception -> exception
