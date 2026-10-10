@@ -337,8 +337,7 @@ public class PostService {
         postAccessValidator.validateAuthorOrAdmin(post, userId, isAdmin);
         post.softDelete();
         userStatsService.recordPostDeleted(post.getUserId());
-        // 삭제된 글의 본문/썸네일 이미지를 MinIO에서 정리한다 (고아 방지, best-effort)
-        deleteImagesAfterCommit(collectImageUrls(post));
+        // 이미지는 보관 기간 동안 남겨 둔다(복구 대비). 영구 삭제 때 PostRetentionPurger 가 지운다.
     }
 
     private CommunityPost findPost(Long postId) {

@@ -102,6 +102,11 @@ minio:
 cors:
   allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:5173,http://localhost:5174}
 
+community:
+  post:
+    # 삭제한 글(이미지 포함)을 관리자가 되살릴 수 있는 기간. 지나면 PostRetentionPurger 가 영구 삭제한다.
+    retention-days: ${POST_RETENTION_DAYS:30}
+
 logging:
   level:
     org.springframework: WARN
