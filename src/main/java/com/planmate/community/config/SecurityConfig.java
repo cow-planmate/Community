@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.common.exception.ErrorResponse;
 import com.planmate.community.security.GatewayAuthenticationFilter;
+import com.planmate.community.security.SuspendedWriteGuardFilter;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Bean;
@@ -46,6 +47,7 @@ public class SecurityConfig {
                         .requestMatchers("/api/community/admin/**").hasRole("ADMIN")
                         .anyRequest().authenticated())
                 .addFilterBefore(gatewayAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterAfter(new SuspendedWriteGuardFilter(objectMapper), GatewayAuthenticationFilter.class)
                 .exceptionHandling(exception -> exception
                         .authenticationEntryPoint(authenticationEntryPoint())
                         .accessDeniedHandler(accessDeniedHandler()));
