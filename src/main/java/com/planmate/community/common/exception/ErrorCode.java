@@ -20,6 +20,7 @@ public enum ErrorCode {
     POST_ACCESS_DENIED(HttpStatus.FORBIDDEN, "POST_002", "게시글에 대한 권한이 없습니다."),
     POST_RESTORE_NOT_ALLOWED(HttpStatus.CONFLICT, "POST_003", "복구할 수 없는 게시글입니다."),
     PROFILE_PRIVATE(HttpStatus.FORBIDDEN, "USER_002", "비공개 프로필입니다."),
+    ACCOUNT_SUSPENDED(HttpStatus.FORBIDDEN, "USER_003", "정지된 계정은 글이나 댓글을 작성할 수 없습니다."),
 
     REPORT_SELF_DENIED(HttpStatus.BAD_REQUEST, "REPORT_001", "본인이 작성한 글은 신고할 수 없습니다."),
     REPORT_ALREADY_SUBMITTED(HttpStatus.CONFLICT, "REPORT_002", "이미 신고한 게시글입니다."),
