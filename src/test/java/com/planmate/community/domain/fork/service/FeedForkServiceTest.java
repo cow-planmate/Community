@@ -39,6 +39,10 @@ class FeedForkServiceTest {
     @Mock
     private FeedPostRepository postRepository;
 
+    @Mock private com.planmate.community.common.notification.NotificationOutboxWriter notificationOutbox;
+    @org.mockito.Spy private com.planmate.community.common.notification.CommunityNotificationFactory notificationFactory = new com.planmate.community.common.notification.CommunityNotificationFactory();
+    @Mock private com.planmate.community.common.client.UserClient userClient;
+
     @InjectMocks
     private FeedForkService feedForkService;
 
@@ -66,6 +70,21 @@ class FeedForkServiceTest {
         verify(postRepository).addForkCount(1L, 1);
         assertThat(response.forks()).isEqualTo(1);
         assertThat(response.myFork()).isTrue();
+        var event = org.mockito.ArgumentCaptor.forClass(build.buf.gen.planmate.notification.v1.NotificationRequested.class);
+        verify(notificationOutbox).publish(event.capture());
+        assertThat(event.getValue().getTypeValue()).isEqualTo(13);
+        assertThat(event.getValue().getRecipientUserId()).isEqualTo(authorId.toString());
+        assertThat(event.getValue().getAction().getRoute()).isEqualTo("FEED_POST");
+        assertThat(event.getValue().getAction().getParametersOrThrow("feedId")).isEqualTo("1");
+    }
+
+    @Test
+    void ownForkDoesNotNotifySelf() {
+        var post = feedPost(0);
+        ReflectionTestUtils.setField(post, "userId", userId);
+        when(postRepository.findById(1L)).thenReturn(Optional.of(post));
+        feedForkService.fork(userId, 1L);
+        org.mockito.Mockito.verifyNoInteractions(notificationOutbox);
     }
 
     @Test
