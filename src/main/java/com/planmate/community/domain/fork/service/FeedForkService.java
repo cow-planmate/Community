@@ -1,6 +1,9 @@
 package com.planmate.community.domain.fork.service;
 
 import com.planmate.community.common.exception.CommunityException;
+import com.planmate.community.common.client.UserClient;
+import com.planmate.community.common.notification.CommunityNotificationFactory;
+import com.planmate.community.common.notification.NotificationOutboxWriter;
 import com.planmate.community.common.exception.ErrorCode;
 import com.planmate.community.domain.fork.dto.ForkResponse;
 import com.planmate.community.domain.fork.repository.FeedForkRepository;
@@ -20,6 +23,9 @@ public class FeedForkService {
 
     private final FeedForkRepository feedForkRepository;
     private final FeedPostRepository postRepository;
+    private final NotificationOutboxWriter notificationOutbox;
+    private final CommunityNotificationFactory notificationFactory;
+    private final UserClient userClient;
 
     /**
      * 피드 일정 가져가기(포크) — 횟수 제한 없음.
@@ -28,7 +34,11 @@ public class FeedForkService {
      */
     @Transactional
     public ForkResponse fork(UUID userId, Long postId) {
-        findFeedPost(postId);
+        Post post = findFeedPost(postId);
+        if (!post.getUserId().equals(userId)) {
+            String actor = userClient.getAuthor(userId).map(profile -> profile.nickname()).orElse("누군가");
+            notificationOutbox.publish(notificationFactory.feedForked(post.getUserId(), userId, actor, postId, post.getTitle()));
+        }
 
         feedForkRepository.upsertFork(postId, userId, LocalDateTime.now());
         postRepository.addForkCount(postId, 1);

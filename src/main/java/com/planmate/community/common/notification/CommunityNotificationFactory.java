@@ -27,6 +27,13 @@ public class CommunityNotificationFactory {
                 resourceId, resourceName, route, parameters, Map.of());
     }
 
+    // The published SDK predates enum 13; preserve its protobuf wire value until regeneration.
+    public NotificationRequested feedForked(UUID recipient, UUID actor, String actorName, Long feedId, String title) {
+        return create(recipient, actor, actorName, NotificationType.NOTIFICATION_TYPE_UNSPECIFIED,
+                "FEED_POST", feedId.toString(), title, "FEED_POST", Map.of("feedId", feedId.toString()))
+                .toBuilder().setTypeValue(13).build();
+    }
+
     /**
      * 뱃지는 eventId 를 (사용자, 뱃지코드)로 결정론적으로 만든다. 뱃지 판정이 여러 경로에서
      * 중복 실행돼도 소비자가 같은 eventId 로 지워, "최초 달성 한 번"이라는 정책이 유지된다.
